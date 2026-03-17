@@ -18,6 +18,11 @@ gemini_v1.md
 perplexity_v1.md
 research/
 
+# Logs and env
+*.log
+.env
+.env.*
+
 # OS files
 .DS_Store
 Thumbs.db

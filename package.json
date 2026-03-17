@@ -42,11 +42,13 @@
     "multi-agent",
     "orchestration",
     "ai-coding",
-    "cli-council"
+    "cli-council",
+    "coding-agents",
+    "council"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropic-openai-google/aog"
+    "url": "https://github.com/LonglifeIO/AOG.git"
   },
   "files": [
     "dist",

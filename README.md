@@ -1,6 +1,21 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](https://www.typescriptlang.org)
+
 # AOG — Multi-Agent CLI Council
 
 **AOG** (Anthropic, OpenAI, Google) is an open-source MCP server that orchestrates Claude Code, Codex CLI, and Gemini CLI as a collaborative multi-agent coding team. Inspired by the LLM council pattern — multiple models working the same problem independently, then cross-reviewing and synthesizing — but applied to CLI coding agents working on real code.
+
+## See It In Action
+
+A single `council_run` command dispatched the same task to Claude Code and Gemini CLI in parallel worktrees:
+
+| Agent | What It Built | Time |
+|-------|--------------|------|
+| Claude | Clean 9-line `getHealth()` using `Date.now()` | ~9s |
+| Gemini | 15-line version with JSDoc, `process.uptime()`, AND wrote tests unprompted | ~10s |
+
+Both implementations were anonymized and cross-reviewed. The chairman merged the best parts of each into the final result. Total council time: ~2 minutes.
 
 ## Prerequisites
 
@@ -11,7 +26,9 @@
   - [Codex CLI](https://openai.com/codex) (ChatGPT Plus/Pro subscription)
   - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (Google account, free tier)
 
-AOG works with any subset of CLIs — even just one. More CLIs = more capabilities.
+> **Don't have all three?** AOG works with any subset — even just one CLI.
+> Delegate mode routes tasks to whatever you have installed. Council and
+> pipeline modes unlock when you have two or more.
 
 ## Quick Start
 
@@ -58,6 +75,11 @@ Execute multi-stage pipelines from YAML templates:
 - **quick-fix** — fix -> test -> review
 - **migration** — research -> plan -> approve -> implement -> test -> review -> synthesize
 - **dependency-update** — analyze -> update -> test -> review
+- **research-synthesis** — read multi-source research -> synthesize -> plan -> approve -> build
+
+The research-synthesis pipeline is the simplest way to use AOG: drop research
+outputs from multiple LLMs into a `research/` folder, then let AOG synthesize
+findings and build from the plan.
 
 ## Security
 
@@ -77,15 +99,15 @@ Create `aog.config.yaml` in your project root:
 agents:
   claude:
     enabled: true
-    model: sonnet
+    model: sonnet          # or claude-sonnet-4-6
     maxTurns: 20
     maxBudgetUsd: 5.0
   codex:
     enabled: true
-    model: gpt-5.4
+    model: gpt-5.4         # or your preferred model
   gemini:
     enabled: true
-    model: gemini-2.5-pro
+    model: gemini-2.5-pro   # override with your available model
 
 defaults:
   chairman: claude
@@ -103,13 +125,25 @@ security:
 ## Development
 
 ```bash
-git clone https://github.com/anthropic-openai-google/aog
-cd aog
+git clone https://github.com/LonglifeIO/AOG.git
+cd AOG
 npm install
-npm run dev     # Start MCP server with tsx
 npm run build   # Compile TypeScript
-npm test        # Run tests
+npm run dev     # Start MCP server with tsx
 ```
+
+## Not Yet Built
+
+- Unit tests (vitest configured, no test files yet)
+- `aog init` setup wizard
+- Container isolation mode
+- Pipeline resume after pause
+- Metrics / learned adaptive routing
+
+## Contributing
+
+This project is in early development. Issues, bug reports, and PRs welcome.
+See `docs/decisions/` for architecture context before making major changes.
 
 ## License
 

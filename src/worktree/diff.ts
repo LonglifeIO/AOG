@@ -12,6 +12,14 @@ export async function extractChanges(
   const git = simpleGit(worktreePath);
 
   try {
+    // Stage and commit any changes the agent made (including new files)
+    // This is required because git diff merge-base..HEAD only sees committed changes
+    await git.raw(["add", "-A"]);
+    const status = await git.status();
+    if (status.staged.length > 0 || status.created.length > 0 || status.modified.length > 0) {
+      await git.commit("AOG agent changes", { "--allow-empty": null });
+    }
+
     const defaultBranch = await getDefaultBranch(git);
     const mergeBase = await git.raw(["merge-base", defaultBranch, "HEAD"]);
     const base = mergeBase.trim();
