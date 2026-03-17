@@ -6,57 +6,77 @@
 
 **AOG** (Anthropic, OpenAI, Google) is an open-source MCP server that orchestrates Claude Code, Codex CLI, and Gemini CLI as a collaborative multi-agent coding team. Multiple models work the same problem independently, then cross-review and synthesize — applied to CLI coding agents working on real code.
 
-```
-                         ┌─────────────────────┐
-                         │     MCP Client       │
-                         │ (Claude / Cursor /   │
-                         │  VS Code / Codex)    │
-                         └─────────┬───────────┘
-                                   │
-                         ┌─────────▼───────────┐
-                         │    AOG MCP Server    │
-                         │                     │
-                         │  ┌──────────────┐   │
-                         │  │    Router     │   │
-                         │  └──────┬───────┘   │
-                         │         │           │
-                         │  ┌──────▼───────┐   │
-                         │  │  Orchestrator │   │
-                         │  └──┬───┬───┬───┘   │
-                         │     │   │   │       │
-                         └─────┼───┼───┼───────┘
-                               │   │   │
-              ┌────────────────┘   │   └────────────────┐
-              ▼                    ▼                     ▼
-    ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-    │   Claude Code    │ │    Codex CLI     │ │   Gemini CLI     │
-    │                  │ │                  │ │                  │
-    │  ┌────────────┐  │ │  ┌────────────┐  │ │  ┌────────────┐  │
-    │  │ Worktree A │  │ │  │ Worktree B │  │ │  │ Worktree C │  │
-    │  │  (git)     │  │ │  │  (git)     │  │ │  │  (git)     │  │
-    │  └────────────┘  │ │  └────────────┘  │ │  └────────────┘  │
-    └──────────────────┘ └──────────────────┘ └──────────────────┘
-              │                    │                     │
-              └────────────────────┼─────────────────────┘
-                                   ▼
-                         ┌─────────────────────┐
-                         │   Cross-Review &     │
-                         │   Synthesis          │
-                         │                     │
-                         │  Anonymized diffs    │
-                         │  50/30/20 scoring    │
-                         │  Chairman merge      │
-                         └─────────────────────┘
+```mermaid
+graph TB
+    Client["MCP Client<br/><sub>Claude Desktop / Cursor / VS Code</sub>"]
+    AOG["AOG MCP Server"]
+    Router["Router"]
+    Orch["Orchestrator"]
+
+    Claude["Claude Code<br/><sub>Planning & Architecture</sub>"]
+    Codex["Codex CLI<br/><sub>Speed & Generation</sub>"]
+    Gemini["Gemini CLI<br/><sub>Research & Analysis</sub>"]
+
+    WT1["Worktree A"]
+    WT2["Worktree B"]
+    WT3["Worktree C"]
+
+    Review["Cross-Review<br/><sub>Anonymized diffs &bull; 50/30/20 scoring</sub>"]
+    Synth["Synthesis<br/><sub>Chairman merge &bull; Best of each</sub>"]
+
+    Client --> AOG
+    AOG --> Router
+    Router --> Orch
+    Orch --> Claude
+    Orch --> Codex
+    Orch --> Gemini
+    Claude --> WT1
+    Codex --> WT2
+    Gemini --> WT3
+    WT1 --> Review
+    WT2 --> Review
+    WT3 --> Review
+    Review --> Synth
+    Synth --> Client
+
+    style AOG fill:#2d3748,stroke:#4a5568,color:#e2e8f0
+    style Claude fill:#d97706,stroke:#b45309,color:#fff
+    style Codex fill:#059669,stroke:#047857,color:#fff
+    style Gemini fill:#2563eb,stroke:#1d4ed8,color:#fff
+    style Review fill:#7c3aed,stroke:#6d28d9,color:#fff
+    style Synth fill:#7c3aed,stroke:#6d28d9,color:#fff
+    style Client fill:#1e293b,stroke:#334155,color:#e2e8f0
+    style Router fill:#374151,stroke:#4b5563,color:#e2e8f0
+    style Orch fill:#374151,stroke:#4b5563,color:#e2e8f0
+    style WT1 fill:#78350f,stroke:#92400e,color:#fef3c7
+    style WT2 fill:#064e3b,stroke:#065f46,color:#d1fae5
+    style WT3 fill:#1e3a5f,stroke:#1e40af,color:#dbeafe
 ```
 
 ## See It In Action
 
-A single `council_run` command dispatched the same task to Claude Code and Gemini CLI in parallel worktrees:
+A single `council_run` dispatched the same task to Claude and Gemini in parallel worktrees:
+
+```mermaid
+gantt
+    title council_run: "Create getHealth() endpoint"
+    dateFormat X
+    axisFormat %s
+
+    section Claude
+    Spawn & implement     :claude, 0, 9
+    section Gemini
+    Spawn & implement     :gemini, 0, 10
+    section Cross-Review
+    Anonymize & review    :review, 10, 40
+    section Synthesis
+    Score & merge         :synth, 40, 50
+```
 
 | Agent | What It Built | Time |
 |-------|--------------|------|
-| Claude | Clean 9-line `getHealth()` using `Date.now()` | ~9s |
-| Gemini | 15-line version with JSDoc, `process.uptime()`, AND wrote tests unprompted | ~10s |
+| **Claude** | Clean 9-line `getHealth()` using `Date.now()` | ~9s |
+| **Gemini** | 15-line version with JSDoc, `process.uptime()`, AND wrote tests unprompted | ~10s |
 
 Both implementations were anonymized and cross-reviewed. The chairman merged the best parts of each. Total time: ~2 minutes.
 
@@ -93,24 +113,44 @@ Then ask your AI coding agent:
 
 ### DELEGATE — Single Agent Routing
 
-```
-  Task ──▶ Router ──▶ Best Agent ──▶ Result
-              │
-              ├── IMPLEMENT → Claude (planning)
-              ├── RESEARCH  → Gemini (1M context)
-              ├── GENERATE  → Codex  (speed)
-              ├── REVIEW    → Gemini (large diffs)
-              └── DEBUG     → Claude (reasoning)
+Routes each task to the best available CLI:
+
+```mermaid
+graph LR
+    Task["Task"] --> Router["Router"]
+    Router -->|IMPLEMENT| Claude["Claude<br/><sub>Planning</sub>"]
+    Router -->|RESEARCH| Gemini["Gemini<br/><sub>1M context</sub>"]
+    Router -->|GENERATE| Codex["Codex<br/><sub>Speed</sub>"]
+    Router -->|REVIEW| Gemini
+    Router -->|DEBUG| Claude
+
+    style Claude fill:#d97706,stroke:#b45309,color:#fff
+    style Codex fill:#059669,stroke:#047857,color:#fff
+    style Gemini fill:#2563eb,stroke:#1d4ed8,color:#fff
+    style Router fill:#374151,stroke:#4b5563,color:#e2e8f0
 ```
 
 ### COUNCIL — Multi-Agent Consensus
 
-```
-                    ┌──── Claude ────┐
-                    │                │
-  Task ──▶ Fan Out ─┼──── Codex  ────┼──▶ Cross-Review ──▶ Synthesis ──▶ Result
-                    │                │    (anonymized)     (chairman)
-                    └──── Gemini ────┘
+Fan out to all agents in parallel, cross-review anonymized diffs, synthesize:
+
+```mermaid
+graph LR
+    Task["Task"] --> Fan["Fan Out"]
+    Fan --> C["Claude<br/><sub>Worktree A</sub>"]
+    Fan --> X["Codex<br/><sub>Worktree B</sub>"]
+    Fan --> G["Gemini<br/><sub>Worktree C</sub>"]
+    C --> Rev["Cross-Review<br/><sub>Anonymized</sub>"]
+    X --> Rev
+    G --> Rev
+    Rev --> Syn["Synthesis<br/><sub>Chairman merge</sub>"]
+    Syn --> Result["Result"]
+
+    style C fill:#d97706,stroke:#b45309,color:#fff
+    style X fill:#059669,stroke:#047857,color:#fff
+    style G fill:#2563eb,stroke:#1d4ed8,color:#fff
+    style Rev fill:#7c3aed,stroke:#6d28d9,color:#fff
+    style Syn fill:#7c3aed,stroke:#6d28d9,color:#fff
 ```
 
 1. Each agent gets an isolated git worktree
@@ -121,11 +161,20 @@ Then ask your AI coding agent:
 
 ### PIPELINE — Staged Workflows
 
-```
-  ┌───────────┐    ┌───────────┐    ┌───────────┐    ┌───────────┐
-  │ Research   │───▶│   Plan    │───▶│ Implement  │───▶│  Review   │
-  │ (Gemini)   │    │ (Claude)  │    │ (Codex)    │    │ (Claude)  │
-  └───────────┘    └───────────┘    └───────────┘    └───────────┘
+Chain specialized agents across multiple stages:
+
+```mermaid
+graph LR
+    R["Research<br/><sub>Gemini</sub>"] --> P["Plan<br/><sub>Claude</sub>"]
+    P --> I["Implement<br/><sub>Codex</sub>"]
+    I --> T["Test"]
+    T --> V["Review<br/><sub>Claude</sub>"]
+
+    style R fill:#2563eb,stroke:#1d4ed8,color:#fff
+    style P fill:#d97706,stroke:#b45309,color:#fff
+    style I fill:#059669,stroke:#047857,color:#fff
+    style V fill:#d97706,stroke:#b45309,color:#fff
+    style T fill:#374151,stroke:#4b5563,color:#e2e8f0
 ```
 
 Built-in templates:
