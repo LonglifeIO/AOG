@@ -1,0 +1,43 @@
+name: dependency-update
+version: 1
+timeout: 1200
+description: "Analyze dependencies → update → test → review"
+
+agents:
+  - id: gemini
+    cli: gemini-cli
+    timeout: 300
+    flags: ["--yolo", "-m", "gemini-2.5-pro"]
+  - id: codex
+    cli: codex-cli
+    timeout: 300
+    flags: ["--full-auto"]
+  - id: claude
+    cli: claude-code
+    timeout: 180
+    flags: ["--max-turns", "15"]
+
+stages:
+  - id: analyze
+    type: fan-out
+    agents: [gemini]
+    on_failure: continue
+
+  - id: update
+    type: fan-out
+    agents: [codex]
+    on_failure: abort
+
+  - id: test
+    type: test
+    command: "npm test"
+    timeout: 180
+
+  - id: review
+    type: cross-review
+    anonymize: false
+
+  - id: synthesize
+    type: chairman
+    chairman: claude
+    strategy: best-wins

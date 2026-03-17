@@ -1,0 +1,35 @@
+# Build output
+dist/
+
+# Dependencies
+node_modules/
+
+# Runtime state (per-user, generated at runtime)
+.aog/
+
+# Worktrees (generated at runtime)
+.worktrees/
+
+# Research files (personal — not part of the open-source project)
+# Users should add their own research files
+claude_v1.md
+gpt_v1.md
+gemini_v1.md
+perplexity_v1.md
+research/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test script output
+test-aog.sh
+
+# Build prompts (personal)
+docs/prompt

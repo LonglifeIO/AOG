@@ -1,0 +1,59 @@
+{
+  "name": "@aog/mcp-server",
+  "version": "0.1.0",
+  "description": "Multi-agent coding orchestrator — CLI Council for Claude Code, Codex CLI, and Gemini CLI via MCP",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "aog": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "execa": "^9.5.0",
+    "simple-git": "^3.27.0",
+    "tree-kill": "^1.2.2",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "claude-code",
+    "codex-cli",
+    "gemini-cli",
+    "multi-agent",
+    "orchestration",
+    "ai-coding",
+    "cli-council"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropic-openai-google/aog"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "skills",
+    ".claude",
+    ".codex",
+    ".gemini"
+  ]
+}

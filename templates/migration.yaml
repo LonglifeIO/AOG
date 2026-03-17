@@ -1,0 +1,51 @@
+name: migration
+version: 1
+timeout: 3600
+description: "Research → plan consensus → implement stages → review"
+
+agents:
+  - id: claude
+    cli: claude-code
+    timeout: 600
+    flags: ["--max-turns", "30", "--max-budget-usd", "10.00"]
+  - id: codex
+    cli: codex-cli
+    timeout: 300
+    flags: ["--full-auto"]
+  - id: gemini
+    cli: gemini-cli
+    timeout: 300
+    flags: ["--yolo", "-m", "gemini-2.5-pro"]
+
+stages:
+  - id: research
+    type: fan-out
+    agents: [claude, gemini]
+    on_failure: continue
+
+  - id: plan-review
+    type: cross-review
+    anonymize: true
+
+  - id: approve-plan
+    type: approval
+    mode: interactive
+
+  - id: implement
+    type: fan-out
+    agents: [claude, codex]
+    on_failure: abort
+
+  - id: test
+    type: test
+    command: "npm test"
+    timeout: 300
+
+  - id: final-review
+    type: cross-review
+    anonymize: true
+
+  - id: synthesize
+    type: chairman
+    chairman: claude
+    strategy: chairman-merge

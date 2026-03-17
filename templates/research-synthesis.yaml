@@ -1,0 +1,58 @@
+name: research-synthesis
+version: 1
+timeout: 1800
+description: >
+  Synthesize multi-source research into an implementation plan and optionally
+  start building. Designed for the workflow: run deep research across multiple
+  LLMs, drop outputs in research/, let AOG do the rest.
+
+agents:
+  - id: claude
+    cli: claude-code
+    timeout: 600
+    flags: ["--max-turns", "30", "--max-budget-usd", "10.00"]
+
+stages:
+  - id: synthesize
+    type: sequential
+    agents: [claude]
+    timeout: 600
+    on_failure: abort
+    prompt_template: |
+      Read every file in research/. These are parallel research outputs from
+      different AI systems on the same topic. For each finding:
+      - Where sources AGREE → high confidence, build on it
+      - Where sources CONFLICT → flag with both positions
+      - Where only ONE source covers something → note lower confidence
+      - Where ALL sources are uncertain → mark "needs verification"
+      Produce docs/SYNTHESIS.md with the cross-referenced findings.
+
+  - id: plan
+    type: sequential
+    agents: [claude]
+    timeout: 600
+    on_failure: abort
+    prompt_template: |
+      Based on docs/SYNTHESIS.md and the original research in research/,
+      produce docs/IMPLEMENTATION-PLAN.md containing:
+      1. Architecture decisions (with rationale from research)
+      2. Project structure (directories and key files)
+      3. Dependencies and tooling
+      4. Build order (what to implement first)
+      5. Open questions that need resolving before building
+      6. Verification checklist (things to manually test)
+
+  - id: approve
+    type: approval
+    mode: interactive
+
+  - id: build
+    type: sequential
+    agents: [claude]
+    timeout: 900
+    on_failure: abort
+    prompt_template: |
+      Execute the implementation plan in docs/IMPLEMENTATION-PLAN.md.
+      Build every file specified in the plan. All code should be functional.
+      Reference the research in research/ and synthesis in docs/SYNTHESIS.md
+      for specific technical decisions.
