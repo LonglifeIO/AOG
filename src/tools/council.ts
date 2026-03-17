@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import { execa } from "execa";
 import type { AgentManager } from "../agents/manager.js";
 import type { WorktreeManager } from "../worktree/manager.js";
-import type { AgentId, CouncilResult } from "../agents/types.js";
+import type { AgentId } from "../agents/types.js";
 import { fanOut } from "../council/fanout.js";
 import { crossReview } from "../council/review.js";
 import { synthesize } from "../council/synthesis.js";
+import { saveSession } from "../utils/session.js";
 
 interface CouncilArgs {
   task: string;
@@ -20,7 +21,7 @@ export async function handleCouncil(
   args: CouncilArgs,
   agentManager: AgentManager,
   worktreeManager: WorktreeManager
-): Promise<CouncilResult> {
+): Promise<Record<string, unknown>> {
   const taskId = randomUUID().slice(0, 8);
   const startTime = Date.now();
   const available = agentManager.getAvailableAgents();
@@ -35,7 +36,7 @@ export async function handleCouncil(
   const chairman = (args.chairman === "best-scorer" ? undefined : args.chairman) ?? agents[0];
 
   try {
-    // Phase 1: Fan-out — parallel implementation
+    // Phase 1: Fan-out
     const implementations = await fanOut({
       taskId,
       task: args.task,
@@ -69,10 +70,10 @@ export async function handleCouncil(
       }
     }
 
-    // Phase 3: Cross-review with anonymized diffs
+    // Phase 3: Cross-review
     const reviews = await crossReview({ taskId, implementations, agents, agentManager });
 
-    // Phase 4: Chairman synthesis
+    // Phase 4: Synthesis
     const synthesis = await synthesize({
       taskId,
       implementations,
@@ -84,36 +85,43 @@ export async function handleCouncil(
 
     const duration_ms = Date.now() - startTime;
 
-    const agentResults: CouncilResult["agents"] = {};
-    for (const [agentId, impl] of Object.entries(implementations)) {
-      agentResults[agentId] = {
-        taskId,
-        agent: agentId as AgentId,
-        model: "",
-        status: impl.status === "completed" ? "completed" : "failed",
-        duration_ms: 0,
-        result: impl.diff ?? "",
-        cost: { usd: null, tokens_in: null, tokens_out: null },
-        changes: impl.diff ? {
+    // Persist full data to session file
+    await saveSession(taskId, {
+      mode: "council",
+      agents: Object.fromEntries(
+        Object.entries(implementations).map(([id, impl]) => [id, {
+          status: impl.status,
           branch: impl.branch,
-          files_changed: 0,
-          insertions: 0,
-          deletions: 0,
-          diff_summary: impl.diffSummary ?? "",
           diff: impl.diff,
-        } : null,
-        tests: impl.testResults ?? null,
-        session: { id: taskId, resumable: false },
-      };
+          diffSummary: impl.diffSummary,
+          testResults: impl.testResults,
+        }])
+      ),
+      reviews,
+      synthesis,
+      duration_ms,
+    });
+
+    // Build compact per-agent summaries
+    const agentSummaries: Record<string, { status: string; files_changed: string[] }> = {};
+    for (const [agentId, impl] of Object.entries(implementations)) {
+      const files = impl.diffSummary
+        ? impl.diffSummary.split("\n").map((l: string) => l.split("|")[0].trim()).filter(Boolean)
+        : [];
+      agentSummaries[agentId] = { status: impl.status, files_changed: files };
     }
 
+    // Return compact summary
     return {
       taskId,
       mode: "council",
       status: synthesis ? "success" : "partial",
+      summary: synthesis?.summary ?? `${Object.values(implementations).filter(i => i.status === "completed").length}/${agents.length} agents completed`,
+      winner: synthesis?.branch ?? null,
+      strategy: synthesis?.strategy ?? null,
+      agents: agentSummaries,
       duration_ms,
-      agents: agentResults,
-      synthesis: synthesis ?? undefined,
+      detail: `Full diffs, reviews, and synthesis in .aog/sessions/${taskId}.json`,
     };
   } finally {
     for (const agent of agents) {

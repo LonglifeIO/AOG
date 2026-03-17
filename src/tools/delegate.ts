@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { AgentManager } from "../agents/manager.js";
 import type { WorktreeManager } from "../worktree/manager.js";
-import type { AgentId, AgentResult, TaskType } from "../agents/types.js";
+import type { AgentId, TaskType } from "../agents/types.js";
 import { routeTask } from "../router/index.js";
 import { extractChanges } from "../worktree/diff.js";
+import { saveSession } from "../utils/session.js";
 
 interface DelegateArgs {
   task: string;
@@ -16,19 +17,11 @@ interface DelegateArgs {
   timeout?: number;
 }
 
-interface DelegateResult {
-  taskId: string;
-  mode: "delegate";
-  agent: AgentId;
-  status: string;
-  result: AgentResult;
-}
-
 export async function handleDelegate(
   args: DelegateArgs,
   agentManager: AgentManager,
   worktreeManager: WorktreeManager
-): Promise<DelegateResult> {
+): Promise<Record<string, unknown>> {
   const taskId = randomUUID().slice(0, 8);
   const available = agentManager.getAvailableAgents();
 
@@ -64,7 +57,28 @@ export async function handleDelegate(
       result.changes = await extractChanges(cwd, branch);
     }
 
-    return { taskId, mode: "delegate", agent, status: result.status, result };
+    // Persist full result to session file
+    await saveSession(taskId, { mode: "delegate", agent, fullResult: result });
+
+    // Return compact summary
+    const filesChanged = result.changes
+      ? result.changes.diff_summary.split("\n").map((l: string) => l.split("|")[0].trim()).filter(Boolean)
+      : [];
+
+    return {
+      taskId,
+      mode: "delegate",
+      agent,
+      status: result.status,
+      summary: result.status === "completed"
+        ? `${agent} completed in ${(result.duration_ms / 1000).toFixed(1)}s`
+        : `${agent} ${result.status}: ${result.result.slice(0, 100)}`,
+      files_changed: filesChanged,
+      duration_ms: result.duration_ms,
+      cost_usd: result.cost.usd,
+      session_id: result.session.id,
+      detail: `Full output stored in .aog/sessions/${taskId}.json`,
+    };
   } catch (error) {
     if (args.use_worktree) {
       await worktreeManager.remove(taskId, agent).catch(() => {});

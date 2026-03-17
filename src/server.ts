@@ -64,6 +64,10 @@ const PipelineSchema = {
 
 const StatusSchema = {
   task_id: z.string().optional().describe("Specific task ID to check (omit for all active)"),
+  detail_level: z
+    .enum(["summary", "diffs", "full"])
+    .default("summary")
+    .describe("summary: status only. diffs: include file diffs. full: everything including reviews."),
 };
 
 const CancelSchema = {

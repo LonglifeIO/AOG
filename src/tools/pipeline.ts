@@ -3,6 +3,7 @@ import type { AgentManager } from "../agents/manager.js";
 import type { WorktreeManager } from "../worktree/manager.js";
 import { loadTemplate } from "../pipeline/templates.js";
 import { PipelineEngine } from "../pipeline/engine.js";
+import { saveSession } from "../utils/session.js";
 
 interface PipelineArgs {
   template: string;
@@ -22,7 +23,7 @@ export async function handlePipeline(
   if (!template) {
     throw new Error(
       `Unknown pipeline template: ${args.template}. ` +
-      `Available: full-council, quick-fix, migration, dependency-update`
+      `Available: full-council, quick-fix, migration, dependency-update, research-synthesis`
     );
   }
 
@@ -38,13 +39,29 @@ export async function handlePipeline(
 
   const result = await engine.run();
 
+  // Persist full pipeline state to session file
+  await saveSession(taskId, {
+    mode: "pipeline",
+    template: args.template,
+    fullHistory: result.history,
+    fullOutput: result.finalOutput,
+    status: result.status,
+    duration_ms: result.duration_ms,
+  });
+
+  // Compact stage summaries
+  const stages = result.history
+    .filter(h => h.event === "completed" || h.event === "failed")
+    .map(h => ({ stage: h.stage, event: h.event }));
+
   return {
     taskId,
     mode: "pipeline",
     template: args.template,
     status: result.status,
-    stages: result.history,
+    summary: result.finalOutput.slice(0, 200),
+    stages_completed: stages,
     duration_ms: result.duration_ms,
-    result: result.finalOutput,
+    detail: `Full pipeline output in .aog/sessions/${taskId}.json`,
   };
 }
