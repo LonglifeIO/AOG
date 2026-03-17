@@ -36,14 +36,15 @@ block-beta
 
 ## See It In Action
 
-A single `council_run` dispatched the same task to Claude and Gemini in parallel:
+A single `council_run` dispatched the same task to all three agents in parallel worktrees:
 
-| Agent | What It Built | Time |
-|-------|--------------|------|
-| **Claude** | Clean 9-line `getHealth()` using `Date.now()` | ~9s |
-| **Gemini** | 15-line version with JSDoc, `process.uptime()`, AND wrote tests unprompted | ~10s |
+| Agent | What It Built |
+|-------|--------------|
+| **Claude** | Clean 9-line implementation using `Date.now()` |
+| **Codex** | 13-line version with a `HealthStatus` TypeScript interface and `process.uptime()` |
+| **Gemini** | 12-line version with JSDoc documentation and `process.uptime()` |
 
-Both implementations were anonymized and cross-reviewed. The chairman merged the best parts of each. Total time: ~2 minutes.
+All three implementations were anonymized, cross-reviewed, and scored. The chairman merged the best parts — Codex's type interface with Gemini's docs. Total time: ~82 seconds.
 
 ## Prerequisites
 
