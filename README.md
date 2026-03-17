@@ -7,71 +7,36 @@
 **AOG** (Anthropic, OpenAI, Google) is an open-source MCP server that orchestrates Claude Code, Codex CLI, and Gemini CLI as a collaborative multi-agent coding team. Multiple models work the same problem independently, then cross-review and synthesize — applied to CLI coding agents working on real code.
 
 ```mermaid
-graph TB
-    Client["MCP Client<br/><sub>Claude Desktop / Cursor / VS Code</sub>"]
-    AOG["AOG MCP Server"]
-    Router["Router"]
-    Orch["Orchestrator"]
+block-beta
+  columns 3
 
-    Claude["Claude Code<br/><sub>Planning & Architecture</sub>"]
-    Codex["Codex CLI<br/><sub>Speed & Generation</sub>"]
-    Gemini["Gemini CLI<br/><sub>Research & Analysis</sub>"]
+  space Client["MCP Client"] space
+  space:3
+  space AOG["AOG Server &mdash; Router &bull; Orchestrator &bull; State"] space
+  space:3
+  Claude["Claude Code\nPlanning"] Codex["Codex CLI\nSpeed"] Gemini["Gemini CLI\nResearch"]
+  space:3
+  space Review["Cross-Review &bull; Scoring &bull; Synthesis"] space
 
-    WT1["Worktree A"]
-    WT2["Worktree B"]
-    WT3["Worktree C"]
+  Client --> AOG
+  AOG --> Claude
+  AOG --> Codex
+  AOG --> Gemini
+  Claude --> Review
+  Codex --> Review
+  Gemini --> Review
 
-    Review["Cross-Review<br/><sub>Anonymized diffs &bull; 50/30/20 scoring</sub>"]
-    Synth["Synthesis<br/><sub>Chairman merge &bull; Best of each</sub>"]
-
-    Client --> AOG
-    AOG --> Router
-    Router --> Orch
-    Orch --> Claude
-    Orch --> Codex
-    Orch --> Gemini
-    Claude --> WT1
-    Codex --> WT2
-    Gemini --> WT3
-    WT1 --> Review
-    WT2 --> Review
-    WT3 --> Review
-    Review --> Synth
-    Synth --> Client
-
-    style AOG fill:#2d3748,stroke:#4a5568,color:#e2e8f0
-    style Claude fill:#d97706,stroke:#b45309,color:#fff
-    style Codex fill:#059669,stroke:#047857,color:#fff
-    style Gemini fill:#2563eb,stroke:#1d4ed8,color:#fff
-    style Review fill:#7c3aed,stroke:#6d28d9,color:#fff
-    style Synth fill:#7c3aed,stroke:#6d28d9,color:#fff
-    style Client fill:#1e293b,stroke:#334155,color:#e2e8f0
-    style Router fill:#374151,stroke:#4b5563,color:#e2e8f0
-    style Orch fill:#374151,stroke:#4b5563,color:#e2e8f0
-    style WT1 fill:#78350f,stroke:#92400e,color:#fef3c7
-    style WT2 fill:#064e3b,stroke:#065f46,color:#d1fae5
-    style WT3 fill:#1e3a5f,stroke:#1e40af,color:#dbeafe
+  style Client fill:#1e293b,stroke:#334155,color:#e2e8f0
+  style AOG fill:#2d3748,stroke:#4a5568,color:#e2e8f0
+  style Claude fill:#d97706,stroke:#b45309,color:#fff
+  style Codex fill:#059669,stroke:#047857,color:#fff
+  style Gemini fill:#2563eb,stroke:#1d4ed8,color:#fff
+  style Review fill:#7c3aed,stroke:#6d28d9,color:#fff
 ```
 
 ## See It In Action
 
-A single `council_run` dispatched the same task to Claude and Gemini in parallel worktrees:
-
-```mermaid
-gantt
-    title council_run: "Create getHealth() endpoint"
-    dateFormat X
-    axisFormat %s
-
-    section Claude
-    Spawn & implement     :claude, 0, 9
-    section Gemini
-    Spawn & implement     :gemini, 0, 10
-    section Cross-Review
-    Anonymize & review    :review, 10, 40
-    section Synthesis
-    Score & merge         :synth, 40, 50
-```
+A single `council_run` dispatched the same task to Claude and Gemini in parallel:
 
 | Agent | What It Built | Time |
 |-------|--------------|------|
@@ -115,43 +80,15 @@ Then ask your AI coding agent:
 
 Routes each task to the best available CLI:
 
-```mermaid
-graph LR
-    Task["Task"] --> Router["Router"]
-    Router -->|IMPLEMENT| Claude["Claude<br/><sub>Planning</sub>"]
-    Router -->|RESEARCH| Gemini["Gemini<br/><sub>1M context</sub>"]
-    Router -->|GENERATE| Codex["Codex<br/><sub>Speed</sub>"]
-    Router -->|REVIEW| Gemini
-    Router -->|DEBUG| Claude
-
-    style Claude fill:#d97706,stroke:#b45309,color:#fff
-    style Codex fill:#059669,stroke:#047857,color:#fff
-    style Gemini fill:#2563eb,stroke:#1d4ed8,color:#fff
-    style Router fill:#374151,stroke:#4b5563,color:#e2e8f0
-```
+| Task Type | Preferred Agent | Why |
+|-----------|----------------|-----|
+| IMPLEMENT | Claude Code | Best multi-file planning |
+| RESEARCH | Gemini CLI | 1M token context window |
+| GENERATE | Codex CLI | Fastest execution |
+| REVIEW | Gemini CLI | Large context for diffs |
+| DEBUG | Claude Code | Diagnostic reasoning |
 
 ### COUNCIL — Multi-Agent Consensus
-
-Fan out to all agents in parallel, cross-review anonymized diffs, synthesize:
-
-```mermaid
-graph LR
-    Task["Task"] --> Fan["Fan Out"]
-    Fan --> C["Claude<br/><sub>Worktree A</sub>"]
-    Fan --> X["Codex<br/><sub>Worktree B</sub>"]
-    Fan --> G["Gemini<br/><sub>Worktree C</sub>"]
-    C --> Rev["Cross-Review<br/><sub>Anonymized</sub>"]
-    X --> Rev
-    G --> Rev
-    Rev --> Syn["Synthesis<br/><sub>Chairman merge</sub>"]
-    Syn --> Result["Result"]
-
-    style C fill:#d97706,stroke:#b45309,color:#fff
-    style X fill:#059669,stroke:#047857,color:#fff
-    style G fill:#2563eb,stroke:#1d4ed8,color:#fff
-    style Rev fill:#7c3aed,stroke:#6d28d9,color:#fff
-    style Syn fill:#7c3aed,stroke:#6d28d9,color:#fff
-```
 
 1. Each agent gets an isolated git worktree
 2. All agents implement the task simultaneously
@@ -162,22 +99,6 @@ graph LR
 ### PIPELINE — Staged Workflows
 
 Chain specialized agents across multiple stages:
-
-```mermaid
-graph LR
-    R["Research<br/><sub>Gemini</sub>"] --> P["Plan<br/><sub>Claude</sub>"]
-    P --> I["Implement<br/><sub>Codex</sub>"]
-    I --> T["Test"]
-    T --> V["Review<br/><sub>Claude</sub>"]
-
-    style R fill:#2563eb,stroke:#1d4ed8,color:#fff
-    style P fill:#d97706,stroke:#b45309,color:#fff
-    style I fill:#059669,stroke:#047857,color:#fff
-    style V fill:#d97706,stroke:#b45309,color:#fff
-    style T fill:#374151,stroke:#4b5563,color:#e2e8f0
-```
-
-Built-in templates:
 
 | Template | Stages |
 |----------|--------|
@@ -193,8 +114,6 @@ and build from the plan.
 
 ## Security
 
-AOG follows the principle of least privilege:
-
 - **Spawns official CLI binaries only** — no OAuth token extraction, no SDK auth hacks
 - **Git worktree isolation** — each agent works in its own directory
 - **Output sanitization** — strips prompt injection patterns between agents
@@ -209,15 +128,15 @@ Create `aog.config.yaml` in your project root:
 agents:
   claude:
     enabled: true
-    model: sonnet          # or claude-sonnet-4-6
+    model: sonnet
     maxTurns: 20
     maxBudgetUsd: 5.0
   codex:
     enabled: true
-    model: gpt-5.4         # or your preferred model
+    model: gpt-5.4
   gemini:
     enabled: true
-    model: gemini-2.5-pro   # override with your available model
+    model: gemini-2.5-pro
 
 defaults:
   chairman: claude
@@ -240,21 +159,6 @@ cd AOG
 npm install
 npm run build   # Compile TypeScript
 npm run dev     # Start MCP server with tsx
-```
-
-## Project Structure
-
-```
-src/
-├── server.ts              # MCP server — 5 tool definitions
-├── agents/                # Claude, Codex, Gemini spawners
-├── council/               # Fan-out, cross-review, synthesis
-├── pipeline/              # YAML template engine, state machine
-├── router/                # Task type → agent routing
-├── interaction/           # Decision gates, liveness, progress
-├── conflict/              # File scoping, overlap detection
-├── dispatch/              # Worker environment setup
-└── utils/                 # Output parsers, config, sanitization
 ```
 
 ## Not Yet Built
