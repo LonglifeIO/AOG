@@ -1,6 +1,7 @@
 import type { AgentManager } from "../agents/manager.js";
 import type { WorktreeManager } from "../worktree/manager.js";
 import type { AgentId, AgentImplementation } from "../agents/types.js";
+import type { ProgressReporter } from "../interaction/progress.js";
 import { extractChanges } from "../worktree/diff.js";
 
 interface FanOutOptions {
@@ -11,6 +12,7 @@ interface FanOutOptions {
   worktreeManager: WorktreeManager;
   timeout?: number;
   model?: Record<AgentId, string>;
+  progress?: ProgressReporter;
 }
 
 /**
@@ -20,7 +22,7 @@ interface FanOutOptions {
 export async function fanOut(
   options: FanOutOptions
 ): Promise<Record<string, AgentImplementation>> {
-  const { taskId, task, agents, agentManager, worktreeManager } = options;
+  const { taskId, task, agents, agentManager, worktreeManager, progress } = options;
   const implementations: Record<string, AgentImplementation> = {};
 
   for (const agent of agents) {
@@ -46,9 +48,19 @@ export async function fanOut(
     })
   );
 
+  if (progress) {
+    await progress.worktreesCreated(agents);
+  }
+
   // Spawn all agents in parallel
+  const agentStartTimes: Record<string, number> = {};
   const spawnPromises = worktrees.map(async ({ agent, path: cwd, branch }) => {
     implementations[agent].status = "running";
+    agentStartTimes[agent] = Date.now();
+
+    if (progress) {
+      await progress.agentSpawned(agent);
+    }
 
     try {
       const result = await agentManager.spawn(agent, {
@@ -67,9 +79,22 @@ export async function fanOut(
         implementations[agent].diff = changes.diff;
         implementations[agent].diffSummary = changes.diff_summary;
       }
+
+      if (progress) {
+        const durationSec = (Date.now() - agentStartTimes[agent]) / 1000;
+        const filesChanged = changes ? changes.files_changed : undefined;
+        if (implementations[agent].status === "completed") {
+          await progress.agentCompleted(agent, durationSec, filesChanged);
+        } else {
+          await progress.agentFailed(agent);
+        }
+      }
     } catch {
       implementations[agent].status = "failed";
       implementations[agent].exitCode = 1;
+      if (progress) {
+        await progress.agentFailed(agent);
+      }
     }
   });
 

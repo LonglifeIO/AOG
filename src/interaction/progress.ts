@@ -2,41 +2,91 @@ import type { AgentId } from "../agents/types.js";
 
 /**
  * Progress reporting for long-running AOG operations.
- * Formats progress updates as MCP-compatible content blocks.
+ * Sends MCP notifications/progress to keep clients informed.
  *
- * In MCP, long-running tools return partial results via progress notifications.
- * AOG uses these to keep the user informed between decision gates.
+ * Uses the MCP progress notification protocol:
+ * - progressToken: opaque token from the client request
+ * - progress: current step number
+ * - total: total expected steps (optional)
+ * - message: human-readable status line
  */
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ProgressSender = (notification: any) => Promise<void>;
 
 export interface ProgressUpdate {
   taskId: string;
   stage: string;
   agent?: AgentId;
-  percent?: number; // 0-100
+  percent?: number;
   message: string;
   timestamp: string;
 }
 
+export type OnProgress = (message: string, progress?: number, total?: number) => void;
+
 export class ProgressReporter {
   private updates: ProgressUpdate[] = [];
-  private listeners: Array<(update: ProgressUpdate) => void> = [];
+  private step = 0;
+  private totalSteps?: number;
+  private sender: ProgressSender | null;
+  private progressToken: string | number | null;
+  private taskId: string;
 
-  report(update: Omit<ProgressUpdate, "timestamp">): void {
-    const full: ProgressUpdate = {
-      ...update,
-      timestamp: new Date().toISOString(),
-    };
-    this.updates.push(full);
-
-    for (const listener of this.listeners) {
-      listener(full);
-    }
+  constructor(options: {
+    taskId: string;
+    sender?: ProgressSender | null;
+    progressToken?: string | number | null;
+    totalSteps?: number;
+  }) {
+    this.taskId = options.taskId;
+    this.sender = options.sender ?? null;
+    this.progressToken = options.progressToken ?? null;
+    this.totalSteps = options.totalSteps;
   }
 
-  onProgress(listener: (update: ProgressUpdate) => void): () => void {
-    this.listeners.push(listener);
-    return () => {
-      this.listeners = this.listeners.filter((l) => l !== listener);
+  /**
+   * Send a progress update via MCP and record it locally.
+   */
+  async notify(message: string, stage?: string, agent?: AgentId): Promise<void> {
+    this.step++;
+    const update: ProgressUpdate = {
+      taskId: this.taskId,
+      stage: stage ?? "",
+      agent,
+      percent: this.totalSteps ? Math.round((this.step / this.totalSteps) * 100) : undefined,
+      message,
+      timestamp: new Date().toISOString(),
+    };
+    this.updates.push(update);
+
+    // Send MCP progress notification if we have a sender and token
+    if (this.sender && this.progressToken != null) {
+      try {
+        await this.sender({
+          method: "notifications/progress",
+          params: {
+            progressToken: this.progressToken,
+            progress: this.step,
+            total: this.totalSteps,
+            message,
+          },
+        });
+      } catch {
+        // Don't let notification failures break the operation
+      }
+    }
+
+    // Always log to stderr for MCP server debugging
+    console.error(`[aog] ${message}`);
+  }
+
+  /**
+   * Return an OnProgress callback for sub-components.
+   */
+  callback(): OnProgress {
+    return (message: string) => {
+      void this.notify(message);
     };
   }
 
@@ -44,43 +94,73 @@ export class ProgressReporter {
     return [...this.updates];
   }
 
-  formatForMcp(update: ProgressUpdate): string {
-    const parts: string[] = [];
+  // Convenience methods for common operations
 
-    if (update.stage) parts.push(`[${update.stage}]`);
-    if (update.agent) parts.push(`(${update.agent})`);
-    if (update.percent !== undefined) parts.push(`${update.percent}%`);
-    parts.push(update.message);
-
-    return parts.join(" ");
+  async councilStarted(agents: AgentId[]): Promise<void> {
+    await this.notify(`Council started — ${agents.length} agents (${agents.join(", ")})`, "setup");
   }
 
-  // Standard progress messages for common operations
-  stageStarted(taskId: string, stage: string): void {
-    this.report({ taskId, stage, message: `Stage started: ${stage}` });
+  async worktreesCreated(agents: AgentId[]): Promise<void> {
+    await this.notify(`Worktrees created for ${agents.join(", ")}`, "setup");
   }
 
-  stageCompleted(taskId: string, stage: string): void {
-    this.report({ taskId, stage, percent: 100, message: `Stage completed: ${stage}` });
+  async agentSpawned(agent: AgentId): Promise<void> {
+    await this.notify(`${agent}: implementing…`, "fan-out", agent);
   }
 
-  agentSpawned(taskId: string, agent: AgentId): void {
-    this.report({ taskId, stage: "dispatch", agent, message: `${agent} spawned` });
+  async agentCompleted(agent: AgentId, durationSec: number, filesChanged?: number): Promise<void> {
+    const parts = [`${agent}: done (${durationSec.toFixed(0)}s`];
+    if (filesChanged !== undefined) parts[0] += `, ${filesChanged} files changed`;
+    parts[0] += ")";
+    await this.notify(parts[0], "fan-out", agent);
   }
 
-  agentCompleted(taskId: string, agent: AgentId, status: string): void {
-    this.report({ taskId, stage: "dispatch", agent, message: `${agent} ${status}` });
+  async agentFailed(agent: AgentId): Promise<void> {
+    await this.notify(`${agent}: failed`, "fan-out", agent);
   }
 
-  worktreeCreated(taskId: string, agent: AgentId): void {
-    this.report({ taskId, stage: "setup", agent, message: `Worktree created for ${agent}` });
+  async testsStarted(): Promise<void> {
+    await this.notify("Running tests…", "test");
   }
 
-  reviewStarted(taskId: string, reviewer: AgentId): void {
-    this.report({ taskId, stage: "review", agent: reviewer, message: `${reviewer} reviewing` });
+  async testsCompleted(passed: number, total: number): Promise<void> {
+    await this.notify(`Tests: ${passed}/${total} agents passed`, "test");
   }
 
-  synthesisStarted(taskId: string, chairman: AgentId): void {
-    this.report({ taskId, stage: "synthesis", agent: chairman, message: `Chairman ${chairman} synthesizing` });
+  async reviewStarted(agents: AgentId[]): Promise<void> {
+    await this.notify(`Cross-review started (${agents.join(", ")})`, "review");
+  }
+
+  async reviewCompleted(): Promise<void> {
+    await this.notify("Cross-review complete", "review");
+  }
+
+  async synthesisStarted(chairman: AgentId): Promise<void> {
+    await this.notify(`Chairman ${chairman} synthesizing…`, "synthesis", chairman);
+  }
+
+  async synthesisCompleted(strategy: string): Promise<void> {
+    await this.notify(`Synthesis complete (${strategy})`, "synthesis");
+  }
+
+  async delegateStarted(agent: AgentId): Promise<void> {
+    await this.notify(`Delegating to ${agent}…`, "delegate", agent);
+  }
+
+  async delegateWorktreeCreated(agent: AgentId): Promise<void> {
+    await this.notify(`Worktree created for ${agent}`, "setup", agent);
+  }
+
+  async pipelineStageStarted(stageId: string): Promise<void> {
+    await this.notify(`Stage started: ${stageId}`, stageId);
+  }
+
+  async pipelineStageCompleted(stageId: string): Promise<void> {
+    await this.notify(`Stage completed: ${stageId}`, stageId);
+  }
+
+  async pipelineStageFailed(stageId: string, reason?: string): Promise<void> {
+    const msg = reason ? `Stage failed: ${stageId} — ${reason}` : `Stage failed: ${stageId}`;
+    await this.notify(msg, stageId);
   }
 }

@@ -3,6 +3,7 @@ import { execa } from "execa";
 import type { AgentManager } from "../agents/manager.js";
 import type { WorktreeManager } from "../worktree/manager.js";
 import type { AgentId } from "../agents/types.js";
+import type { ProgressReporter } from "../interaction/progress.js";
 import { fanOut } from "../council/fanout.js";
 import { crossReview } from "../council/review.js";
 import { synthesize } from "../council/synthesis.js";
@@ -23,7 +24,8 @@ interface CouncilArgs {
 export async function handleCouncil(
   args: CouncilArgs,
   agentManager: AgentManager,
-  worktreeManager: WorktreeManager
+  worktreeManager: WorktreeManager,
+  progress?: ProgressReporter
 ): Promise<Record<string, unknown>> {
   const taskId = randomUUID().slice(0, 8);
   const startTime = Date.now();
@@ -39,6 +41,10 @@ export async function handleCouncil(
 
   const chairman = (args.chairman === "best-scorer" ? undefined : args.chairman) ?? agents[0];
 
+  if (progress) {
+    await progress.councilStarted(agents);
+  }
+
   try {
     // Phase 1: Fan-out
     const implementations = await fanOut({
@@ -48,10 +54,15 @@ export async function handleCouncil(
       agentManager,
       worktreeManager,
       timeout: args.timeout,
+      progress,
     });
 
     // Phase 2: Run tests
     if (args.run_tests !== false) {
+      if (progress) {
+        await progress.testsStarted();
+      }
+
       const testCmd = args.test_command ?? "npm test";
       for (const [, impl] of Object.entries(implementations)) {
         if (impl.status === "completed" && impl.worktreePath) {
@@ -72,10 +83,16 @@ export async function handleCouncil(
           }
         }
       }
+
+      if (progress) {
+        const completed = Object.values(implementations).filter(i => i.status === "completed");
+        const passed = completed.filter(i => i.testResults?.passed).length;
+        await progress.testsCompleted(passed, completed.length);
+      }
     }
 
     // Phase 3: Cross-review
-    const reviews = await crossReview({ taskId, implementations, agents, agentManager });
+    const reviews = await crossReview({ taskId, implementations, agents, agentManager, progress });
 
     // Phase 4: Synthesis
     const synthesis = await synthesize({
@@ -85,6 +102,7 @@ export async function handleCouncil(
       chairman: chairman!,
       agentManager,
       worktreeManager,
+      progress,
     });
 
     const duration_ms = Date.now() - startTime;

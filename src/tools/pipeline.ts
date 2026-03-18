@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentManager } from "../agents/manager.js";
 import type { WorktreeManager } from "../worktree/manager.js";
+import type { ProgressReporter } from "../interaction/progress.js";
 import { loadTemplate } from "../pipeline/templates.js";
 import { PipelineEngine } from "../pipeline/engine.js";
 import { saveSession } from "../utils/session.js";
@@ -18,7 +19,8 @@ interface PipelineArgs {
 export async function handlePipeline(
   args: PipelineArgs,
   agentManager: AgentManager,
-  worktreeManager: WorktreeManager
+  worktreeManager: WorktreeManager,
+  progress?: ProgressReporter
 ): Promise<Record<string, unknown>> {
   const taskId = randomUUID().slice(0, 8);
   const task = await resolveTask(args);
@@ -39,6 +41,7 @@ export async function handlePipeline(
     agentManager,
     worktreeManager,
     timeout: args.timeout ?? template.timeout * 1000,
+    progress,
   });
 
   const result = await engine.run();

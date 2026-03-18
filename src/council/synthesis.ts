@@ -6,6 +6,7 @@ import type {
   ReviewOutput,
   SynthesisResult,
 } from "../agents/types.js";
+import type { ProgressReporter } from "../interaction/progress.js";
 import { sanitizeInterAgentOutput } from "../utils/output.js";
 
 interface SynthesizeOptions {
@@ -15,6 +16,7 @@ interface SynthesizeOptions {
   chairman: AgentId;
   agentManager: AgentManager;
   worktreeManager: WorktreeManager;
+  progress?: ProgressReporter;
 }
 
 /**
@@ -24,7 +26,11 @@ interface SynthesizeOptions {
 export async function synthesize(
   options: SynthesizeOptions
 ): Promise<SynthesisResult | null> {
-  const { taskId, implementations, reviews, chairman, agentManager } = options;
+  const { taskId, implementations, reviews, chairman, agentManager, progress } = options;
+
+  if (progress) {
+    await progress.synthesisStarted(chairman);
+  }
 
   const scores = scoreImplementations(implementations, reviews);
   if (scores.length === 0) return null;
@@ -38,6 +44,9 @@ export async function synthesize(
 
   // Clear winner — use best-wins strategy
   if (scores.length === 1 || winner.totalScore > scores[1].totalScore * 1.3) {
+    if (progress) {
+      await progress.synthesisCompleted("best-wins");
+    }
     return {
       chairman,
       strategy: "best-wins",
@@ -59,6 +68,10 @@ export async function synthesize(
       timeout: 300_000,
     });
 
+    if (progress) {
+      await progress.synthesisCompleted("chairman-merge");
+    }
+
     return {
       chairman,
       strategy: "chairman-merge",
@@ -68,6 +81,10 @@ export async function synthesize(
       summary: `Chairman (${chairman}) merged. Base: ${winner.agent} (${winner.totalScore}). Also: ${scores.slice(1).map((s) => `${s.agent}:${s.totalScore}`).join(", ")}`,
     };
   } catch {
+    if (progress) {
+      await progress.synthesisCompleted("best-wins (merge failed)");
+    }
+
     return {
       chairman,
       strategy: "best-wins",

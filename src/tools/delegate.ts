@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentManager } from "../agents/manager.js";
 import type { WorktreeManager } from "../worktree/manager.js";
 import type { AgentId, TaskType } from "../agents/types.js";
+import type { ProgressReporter } from "../interaction/progress.js";
 import { routeTask } from "../router/index.js";
 import { extractChanges } from "../worktree/diff.js";
 import { saveSession } from "../utils/session.js";
@@ -23,7 +24,8 @@ interface DelegateArgs {
 export async function handleDelegate(
   args: DelegateArgs,
   agentManager: AgentManager,
-  worktreeManager: WorktreeManager
+  worktreeManager: WorktreeManager,
+  progress?: ProgressReporter
 ): Promise<Record<string, unknown>> {
   const taskId = randomUUID().slice(0, 8);
   const task = await resolveTask(args);
@@ -37,6 +39,10 @@ export async function handleDelegate(
     ? args.preferred_agent
     : routeTask(args.task_type ?? "IMPLEMENT", available);
 
+  if (progress) {
+    await progress.delegateStarted(agent);
+  }
+
   let cwd = process.cwd();
   let branch: string | undefined;
 
@@ -44,6 +50,9 @@ export async function handleDelegate(
     const wt = await worktreeManager.create(taskId, agent);
     cwd = wt.path;
     branch = wt.branch;
+    if (progress) {
+      await progress.delegateWorktreeCreated(agent);
+    }
   }
 
   try {
@@ -76,6 +85,10 @@ export async function handleDelegate(
       });
     }
     await saveSession(taskId, sessionData);
+
+    if (progress) {
+      await progress.agentCompleted(agent, result.duration_ms / 1000, filesChanged.length || undefined);
+    }
 
     // Compact response — under 500 chars
     return {

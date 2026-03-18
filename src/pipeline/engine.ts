@@ -10,6 +10,7 @@ import type {
   StageTransition,
   AgentId,
 } from "../agents/types.js";
+import type { ProgressReporter } from "../interaction/progress.js";
 import { fanOut } from "../council/fanout.js";
 import { crossReview } from "../council/review.js";
 import { synthesize } from "../council/synthesis.js";
@@ -22,6 +23,7 @@ interface PipelineEngineOptions {
   agentManager: AgentManager;
   worktreeManager: WorktreeManager;
   timeout: number;
+  progress?: ProgressReporter;
 }
 
 interface PipelineResult {
@@ -67,14 +69,23 @@ export class PipelineEngine {
 
         this.state.currentStage = stage.id;
         this.recordTransition(stage.id, "started");
+        if (this.options.progress) {
+          await this.options.progress.pipelineStageStarted(stage.id);
+        }
         await this.persistState();
 
         try {
           await this.executeStage(stage);
           this.recordTransition(stage.id, "completed");
+          if (this.options.progress) {
+            await this.options.progress.pipelineStageCompleted(stage.id);
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unknown error";
           this.recordTransition(stage.id, "failed", undefined, { error: message });
+          if (this.options.progress) {
+            await this.options.progress.pipelineStageFailed(stage.id, message);
+          }
 
           if (stage.on_failure !== "continue") {
             this.state.status = "failed";
@@ -125,6 +136,7 @@ export class PipelineEngine {
       agentManager: this.options.agentManager,
       worktreeManager: this.options.worktreeManager,
       timeout: stage.timeout ? stage.timeout * 1000 : undefined,
+      progress: this.options.progress,
     });
 
     this.state.implementations = implementations;
@@ -138,6 +150,7 @@ export class PipelineEngine {
       implementations: this.state.implementations,
       agents,
       agentManager: this.options.agentManager,
+      progress: this.options.progress,
     });
 
     this.state.reviews = reviews;
@@ -153,6 +166,7 @@ export class PipelineEngine {
       chairman,
       agentManager: this.options.agentManager,
       worktreeManager: this.options.worktreeManager,
+      progress: this.options.progress,
     });
 
     this.state.synthesis = result;

@@ -1,5 +1,6 @@
 import type { AgentManager } from "../agents/manager.js";
 import type { AgentId, AgentImplementation, ReviewOutput } from "../agents/types.js";
+import type { ProgressReporter } from "../interaction/progress.js";
 import { anonymizedDiffStat } from "../worktree/diff.js";
 import { sanitizeInterAgentOutput } from "../utils/output.js";
 
@@ -10,6 +11,7 @@ interface CrossReviewOptions {
   implementations: Record<string, AgentImplementation>;
   agents: AgentId[];
   agentManager: AgentManager;
+  progress?: ProgressReporter;
 }
 
 /**
@@ -19,7 +21,7 @@ interface CrossReviewOptions {
 export async function crossReview(
   options: CrossReviewOptions
 ): Promise<Record<string, ReviewOutput[]>> {
-  const { taskId, implementations, agents, agentManager } = options;
+  const { taskId, implementations, agents, agentManager, progress } = options;
   const reviews: Record<string, ReviewOutput[]> = {};
 
   const completedAgents = agents.filter(
@@ -28,6 +30,11 @@ export async function crossReview(
 
   if (completedAgents.length < 2) {
     return reviews;
+  }
+
+  const reviewers = agents.filter((reviewer) => agentManager.isAvailable(reviewer));
+  if (progress) {
+    await progress.reviewStarted(reviewers);
   }
 
   // Generate anonymized diff stats (not full diffs)
@@ -42,8 +49,7 @@ export async function crossReview(
   }
 
   // Each agent reviews all implementations
-  const reviewPromises = agents
-    .filter((reviewer) => agentManager.isAvailable(reviewer))
+  const reviewPromises = reviewers
     .map(async (reviewer) => {
       const shuffled = [...labeledStats].sort(() => Math.random() - 0.5);
       const allStats = shuffled.map((d) => d.stat).join("\n\n---\n\n");
@@ -65,6 +71,10 @@ export async function crossReview(
     });
 
   await Promise.allSettled(reviewPromises);
+
+  if (progress) {
+    await progress.reviewCompleted();
+  }
 
   return reviews;
 }

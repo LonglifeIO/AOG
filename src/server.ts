@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { AgentManager } from "./agents/manager.js";
 import { WorktreeManager } from "./worktree/manager.js";
+import { ProgressReporter } from "./interaction/progress.js";
 import { handleDelegate } from "./tools/delegate.js";
 import { handleCouncil } from "./tools/council.js";
 import { handlePipeline } from "./tools/pipeline.js";
@@ -78,6 +79,27 @@ const CancelSchema = {
   force: z.boolean().default(false).describe("Force kill agent processes"),
 };
 
+/**
+ * Create a ProgressReporter wired to MCP progress notifications.
+ * If the client sent a progressToken, progress updates will be pushed
+ * back as notifications/progress messages.
+ */
+function createProgressReporter(
+  taskId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  extra: { _meta?: { progressToken?: string | number }; sendNotification: (...args: any[]) => Promise<void> },
+  totalSteps?: number
+): ProgressReporter {
+  const progressToken = extra._meta?.progressToken ?? null;
+
+  return new ProgressReporter({
+    taskId,
+    sender: extra.sendNotification,
+    progressToken,
+    totalSteps,
+  });
+}
+
 interface AogServer {
   start(): Promise<void>;
 }
@@ -101,8 +123,9 @@ export async function createServer(): Promise<AogServer> {
     "Supports Claude Code, Codex CLI, and Gemini CLI. " +
     "Optionally runs in an isolated git worktree.",
     DelegateSchema,
-    async (args) => {
-      const result = await handleDelegate(args, agentManager, worktreeManager);
+    async (args, extra) => {
+      const progress = createProgressReporter("delegate", extra, 3);
+      const result = await handleDelegate(args, agentManager, worktreeManager, progress);
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     }
   );
@@ -114,8 +137,12 @@ export async function createServer(): Promise<AogServer> {
     "Each agent works in an isolated git worktree. " +
     "Includes cross-review with anonymized diffs and chairman synthesis.",
     CouncilSchema,
-    async (args) => {
-      const result = await handleCouncil(args, agentManager, worktreeManager);
+    async (args, extra) => {
+      // Estimate total steps: setup(1) + worktrees(1) + agents(n) + tests(1) + review(2) + synthesis(2)
+      const agentCount = args.agents?.length ?? 3;
+      const totalSteps = 3 + agentCount * 2 + (args.run_tests !== false ? 2 : 0) + 2;
+      const progress = createProgressReporter("council", extra, totalSteps);
+      const result = await handleCouncil(args, agentManager, worktreeManager, progress);
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     }
   );
@@ -127,8 +154,9 @@ export async function createServer(): Promise<AogServer> {
     "Built-in templates: full-council, quick-fix, migration, dependency-update, research-synthesis. " +
     "Stages run sequentially with context passing between them.",
     PipelineSchema,
-    async (args) => {
-      const result = await handlePipeline(args, agentManager, worktreeManager);
+    async (args, extra) => {
+      const progress = createProgressReporter("pipeline", extra);
+      const result = await handlePipeline(args, agentManager, worktreeManager, progress);
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     }
   );
