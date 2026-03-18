@@ -164,6 +164,31 @@ AOG is designed for token-constrained environments (Claude Pro, API budgets).
 - **Lean prompts** — Worker instructions, cross-review prompts, and synthesis prompts are minimized. Reviews use `git diff --stat` instead of full diffs.
 - **Debug logging** — Set `AOG_DEBUG_TOKENS=true` to log token estimates (chars/4) per session in `.aog/sessions/{taskId}.json`.
 
+## Progress Notifications
+
+Long-running operations push real-time MCP progress notifications so you can see what's happening instead of staring at a spinner:
+
+```
+Council started — 2 agents (claude, gemini)
+Worktrees created for claude, gemini
+claude: implementing…
+gemini: implementing…
+gemini: done (72s, 4 files changed)
+claude: done (108s, 3 files changed)
+Running tests…
+Tests: 2/2 agents passed
+Cross-review started (claude, gemini)
+Cross-review complete
+Chairman claude synthesizing…
+Synthesis complete (best-wins)
+```
+
+Progress is reported for all three modes (delegate, council, pipeline) at each phase: worktree creation, agent spawn/complete, tests, cross-review, and synthesis.
+
+## Submodule Support
+
+Git worktrees automatically run `git submodule update --init --recursive` after creation, so projects with submodules (e.g. shared libraries tracked as separate repos) work out of the box.
+
 ## Security
 
 - **Spawns official CLI binaries only** — no OAuth token extraction, no SDK auth hacks
@@ -215,7 +240,7 @@ npm run dev     # Start MCP server with tsx
 
 ## Not Yet Built
 
-- Unit tests (vitest configured, no test files yet)
+- Unit tests (vitest configured, expanding coverage)
 - `aog init` setup wizard
 - Container isolation mode
 - Pipeline resume after pause
