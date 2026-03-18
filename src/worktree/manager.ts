@@ -46,6 +46,14 @@ export class WorktreeManager {
 
     await this.git.raw(["worktree", "add", wtPath, "-b", branch]);
 
+    // Initialize submodules in the new worktree so nested repos are available
+    try {
+      const wtGit = simpleGit(wtPath);
+      await wtGit.raw(["submodule", "update", "--init", "--recursive"]);
+    } catch {
+      // No submodules or submodule init failed — continue without
+    }
+
     const info: WorktreeInfo = {
       taskId,
       agent,
