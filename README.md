@@ -53,7 +53,7 @@ All three implementations were anonymized, cross-reviewed, and scored. The chair
 - At least one of:
   - [Claude Code](https://claude.ai/code) (Claude Max subscription)
   - [Codex CLI](https://openai.com/codex) (ChatGPT Plus/Pro subscription)
-  - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (Google account, free tier)
+  - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (Google account, free tier available)
 
 > **Don't have all three?** AOG works with any subset — even just one CLI.
 > Delegate mode routes tasks to whatever you have installed. Multi-agent
