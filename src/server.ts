@@ -103,7 +103,7 @@ export async function createServer(): Promise<AogServer> {
     DelegateSchema,
     async (args) => {
       const result = await handleDelegate(args, agentManager, worktreeManager);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     }
   );
 
@@ -116,7 +116,7 @@ export async function createServer(): Promise<AogServer> {
     CouncilSchema,
     async (args) => {
       const result = await handleCouncil(args, agentManager, worktreeManager);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     }
   );
 
@@ -129,7 +129,7 @@ export async function createServer(): Promise<AogServer> {
     PipelineSchema,
     async (args) => {
       const result = await handlePipeline(args, agentManager, worktreeManager);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     }
   );
 
@@ -141,7 +141,7 @@ export async function createServer(): Promise<AogServer> {
     StatusSchema,
     async (args) => {
       const result = await handleStatus(args);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     }
   );
 
@@ -152,7 +152,7 @@ export async function createServer(): Promise<AogServer> {
     CancelSchema,
     async (args) => {
       const result = await handleCancel(args, agentManager, worktreeManager);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     }
   );
 
