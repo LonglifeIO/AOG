@@ -1,11 +1,10 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { existsSync } from "node:fs";
 import type { AgentId } from "../agents/types.js";
 
 /**
  * Generate per-CLI instruction files for a worker worktree.
- * Each agent gets a task-specific instruction file in its expected location.
+ * Kept minimal to reduce token overhead on spawned agents.
  */
 
 export interface InstructionContext {
@@ -14,9 +13,9 @@ export interface InstructionContext {
   agent: AgentId;
   scopedFiles: string[];
   readOnlyContext: string[];
-  outputFormat: string; // Expected output format
+  outputFormat: string;
   worktreePath: string;
-  projectContext?: string; // Optional project-level context to include
+  projectContext?: string;
 }
 
 const INSTRUCTION_FILES: Record<AgentId, string> = {
@@ -36,56 +35,28 @@ export async function writeWorkerInstructions(ctx: InstructionContext): Promise<
 }
 
 function buildInstructionContent(ctx: InstructionContext): string {
-  const sections: string[] = [];
+  const lines: string[] = [`# Task ${ctx.taskId}`, "", ctx.task, ""];
 
-  sections.push(`# AOG Worker Task: ${ctx.taskId}\n`);
-  sections.push(`## Task\n\n${ctx.task}\n`);
-
-  // File scope
   if (ctx.scopedFiles.length > 0) {
-    sections.push(`## File Scope\n`);
-    sections.push(`You should ONLY modify these files:\n`);
-    for (const f of ctx.scopedFiles) {
-      sections.push(`- ${f}`);
-    }
-    sections.push("");
+    lines.push("## Scope", "Only modify:", ...ctx.scopedFiles.map(f => `- ${f}`), "");
   }
 
   if (ctx.readOnlyContext.length > 0) {
-    sections.push(`## Read-Only Context\n`);
-    sections.push(`You may READ these files for context but should NOT modify them:\n`);
-    for (const f of ctx.readOnlyContext) {
-      sections.push(`- ${f}`);
-    }
-    sections.push("");
+    lines.push("## Context (read-only)", ...ctx.readOnlyContext.map(f => `- ${f}`), "");
   }
 
-  // Output expectations
-  sections.push(`## Expected Output\n`);
-  sections.push(`When you complete the task:`);
-  sections.push(`1. Make all code changes in the working directory`);
-  sections.push(`2. Ensure the code compiles and tests pass`);
-  sections.push(`3. Do NOT commit changes — the orchestrator handles git operations`);
-  sections.push(`4. Output format: ${ctx.outputFormat}\n`);
+  lines.push(
+    "## Rules",
+    "- Do NOT commit — orchestrator handles git",
+    "- Do NOT modify .aog/, .worktrees/, or .git/",
+    ""
+  );
 
-  // Constraints
-  sections.push(`## Constraints\n`);
-  sections.push(`- This is an isolated worktree — changes here do not affect the main branch`);
-  sections.push(`- Do NOT modify files in \`.aog/\`, \`.worktrees/\`, or \`.git/\``);
-  sections.push(`- Focus on the task described above`);
-  sections.push(`- Be thorough but concise\n`);
-
-  // Project context
-  if (ctx.projectContext) {
-    sections.push(`## Project Context\n\n${ctx.projectContext}\n`);
-  }
-
-  return sections.join("\n");
+  return lines.join("\n");
 }
 
 /**
  * Read the project-level instruction file if it exists.
- * This provides shared context across all workers.
  */
 export async function readProjectInstructions(
   projectRoot: string,
@@ -94,9 +65,10 @@ export async function readProjectInstructions(
   const filename = INSTRUCTION_FILES[agent];
   const filePath = join(projectRoot, filename);
 
-  if (!existsSync(filePath)) return undefined;
-
   try {
+    const { readFile } = await import("node:fs/promises");
+    const { existsSync } = await import("node:fs");
+    if (!existsSync(filePath)) return undefined;
     return await readFile(filePath, "utf-8");
   } catch {
     return undefined;

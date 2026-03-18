@@ -76,6 +76,34 @@ export async function anonymizedDiff(
   }
 }
 
+/**
+ * Generate an anonymized diff --stat for token-efficient cross-review.
+ * Returns file names + line counts only, not full code diffs.
+ */
+export async function anonymizedDiffStat(
+  worktreePath: string,
+  label: string
+): Promise<string | null> {
+  const git = simpleGit(worktreePath);
+
+  try {
+    const defaultBranch = await getDefaultBranch(git);
+    const mergeBase = await git.raw(["merge-base", defaultBranch, "HEAD"]);
+    const base = mergeBase.trim();
+
+    if (!base) return null;
+
+    const stat = await git.raw(["diff", "--stat", `${base}..HEAD`]);
+    if (!stat.trim()) return null;
+
+    const sanitized = stat.replace(/aog\/(claude|codex|gemini)\//g, "aog/agent/");
+
+    return `## ${label}\n${sanitized}`;
+  } catch {
+    return null;
+  }
+}
+
 async function getDefaultBranch(git: SimpleGit): Promise<string> {
   try {
     const branches = await git.branchLocal();

@@ -5,9 +5,12 @@ import type { AgentId, TaskType } from "../agents/types.js";
 import { routeTask } from "../router/index.js";
 import { extractChanges } from "../worktree/diff.js";
 import { saveSession } from "../utils/session.js";
+import { resolveTask } from "../utils/task-file.js";
+import { buildTokenEstimate, tokenLoggingEnabled } from "../utils/tokens.js";
 
 interface DelegateArgs {
-  task: string;
+  task?: string;
+  task_file?: string;
   task_type?: TaskType;
   preferred_agent?: AgentId;
   use_worktree?: boolean;
@@ -23,6 +26,7 @@ export async function handleDelegate(
   worktreeManager: WorktreeManager
 ): Promise<Record<string, unknown>> {
   const taskId = randomUUID().slice(0, 8);
+  const task = await resolveTask(args);
   const available = agentManager.getAvailableAgents();
 
   if (available.length === 0) {
@@ -44,7 +48,7 @@ export async function handleDelegate(
 
   try {
     const result = await agentManager.spawn(agent, {
-      prompt: args.task,
+      prompt: task,
       cwd,
       taskId,
       model: args.model,
@@ -57,27 +61,30 @@ export async function handleDelegate(
       result.changes = await extractChanges(cwd, branch);
     }
 
-    // Persist full result to session file
-    await saveSession(taskId, { mode: "delegate", agent, fullResult: result });
-
-    // Return compact summary
     const filesChanged = result.changes
       ? result.changes.diff_summary.split("\n").map((l: string) => l.split("|")[0].trim()).filter(Boolean)
       : [];
 
+    const sessionPath = `.aog/sessions/${taskId}.json`;
+
+    // Persist full result + optional token estimates
+    const sessionData: Record<string, unknown> = { mode: "delegate", agent, fullResult: result };
+    if (tokenLoggingEnabled()) {
+      sessionData.token_estimates = buildTokenEstimate({
+        prompt: task,
+        response: result.result,
+      });
+    }
+    await saveSession(taskId, sessionData);
+
+    // Compact response — under 500 chars
     return {
       taskId,
-      mode: "delegate",
-      agent,
       status: result.status,
-      summary: result.status === "completed"
-        ? `${agent} completed in ${(result.duration_ms / 1000).toFixed(1)}s`
-        : `${agent} ${result.status}: ${result.result.slice(0, 100)}`,
+      summary: `${agent} completed in ${(result.duration_ms / 1000).toFixed(1)}s`,
       files_changed: filesChanged,
       duration_ms: result.duration_ms,
-      cost_usd: result.cost.usd,
-      session_id: result.session.id,
-      detail: `Full output stored in .aog/sessions/${taskId}.json`,
+      session_path: sessionPath,
     };
   } catch (error) {
     if (args.use_worktree) {

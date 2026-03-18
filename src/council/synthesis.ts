@@ -43,12 +43,11 @@ export async function synthesize(
       branch: winnerImpl.branch,
       tests_passed: winnerImpl.testResults?.passed ?? false,
       merge_commit: null,
-      summary: `Selected ${winner.agent}'s implementation (score: ${winner.totalScore}). ` +
-        `${scores.map((s) => `${s.agent}: ${s.totalScore}`).join(", ")}`,
+      summary: `Selected ${winner.agent} (score: ${winner.totalScore}). ${scores.map((s) => `${s.agent}: ${s.totalScore}`).join(", ")}`,
     };
   }
 
-  // Close scores — ask chairman to merge
+  // Close scores — ask chairman to merge using diff stat + limited diff
   try {
     const mergePrompt = buildMergePrompt(scores, implementations);
 
@@ -65,9 +64,7 @@ export async function synthesize(
       branch: winnerImpl.branch,
       tests_passed: false,
       merge_commit: null,
-      summary: `Chairman (${chairman}) merged implementations. ` +
-        `Base: ${winner.agent} (score: ${winner.totalScore}). ` +
-        `Incorporated improvements from: ${scores.slice(1).map((s) => s.agent).join(", ")}`,
+      summary: `Chairman (${chairman}) merged. Base: ${winner.agent} (${winner.totalScore}). Also: ${scores.slice(1).map((s) => `${s.agent}:${s.totalScore}`).join(", ")}`,
     };
   } catch {
     return {
@@ -76,7 +73,7 @@ export async function synthesize(
       branch: winnerImpl.branch,
       tests_passed: winnerImpl.testResults?.passed ?? false,
       merge_commit: null,
-      summary: `Fallback to best-wins: ${winner.agent} (score: ${winner.totalScore}). Chairman merge failed.`,
+      summary: `Fallback best-wins: ${winner.agent} (${winner.totalScore}). Chairman merge failed.`,
     };
   }
 }
@@ -155,30 +152,25 @@ function buildMergePrompt(
   const winner = scores[0];
   const others = scores.slice(1);
 
-  let prompt = `You are the chairman agent performing a semantic merge of multiple implementations.
+  let prompt = `Merge the best parts of ${scores.length} implementations. You're in the winner's worktree.
 
-## Scores
-${scores.map((s) => `- ${s.agent}: ${s.totalScore} (test: ${s.testScore}, review: ${s.reviewScore}, impact: ${s.impactScore})`).join("\n")}
-
-## Your Task
-You are working in the highest-scored implementation's worktree.
-Review the diffs from other implementations and selectively apply improvements.
+Scores: ${scores.map((s) => `${s.agent}=${s.totalScore}`).join(", ")}
 
 `;
 
   for (const other of others) {
     const impl = implementations[other.agent];
+    if (impl?.diffSummary) {
+      // Use diff stat, not full diff
+      prompt += `### ${other.agent} (${other.totalScore}) — changed files:\n${impl.diffSummary}\n\n`;
+    }
     if (impl?.diff) {
-      prompt += `## ${other.agent}'s changes (score: ${other.totalScore})\n\`\`\`diff\n${impl.diff.slice(0, 10000)}\n\`\`\`\n\n`;
+      // Include limited diff context for actual cherry-picking
+      prompt += `Key changes (truncated):\n\`\`\`diff\n${impl.diff.slice(0, 3000)}\n\`\`\`\n\n`;
     }
   }
 
-  prompt += `## Instructions
-1. Keep the current (winning) implementation as the base
-2. Cherry-pick specific improvements from other implementations
-3. Do NOT blindly merge — only take changes that are clearly better
-4. Ensure the result compiles and is consistent
-5. Focus on: bug fixes, edge cases, better error handling, missing test cases`;
+  prompt += `Cherry-pick only clearly better changes. Ensure result compiles.`;
 
   return prompt;
 }

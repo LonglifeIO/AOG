@@ -113,6 +113,15 @@ The **research-synthesis** pipeline is the simplest way to start: drop research
 outputs from multiple LLMs into a `research/` folder, then let AOG synthesize
 and build from the plan.
 
+## Token Efficiency
+
+AOG is designed for token-constrained environments (Claude Pro, API budgets).
+
+- **`task_file` param** — All tools accept `task_file` as an alternative to `task`. Write your spec to a temp file and pass the path instead of inlining thousands of characters. Same result, saves the caller's output tokens.
+- **Compact responses** — Tool responses contain only `taskId`, `status`, `summary`, `files_changed`, `duration_ms`, and `session_path`. Full diffs, reviews, and synthesis details go to `.aog/sessions/` on disk. Use `council_status` with `detail_level: "diffs"` or `"full"` to retrieve more.
+- **Lean prompts** — Worker instructions, cross-review prompts, and synthesis prompts are minimized. Reviews use `git diff --stat` instead of full diffs.
+- **Debug logging** — Set `AOG_DEBUG_TOKENS=true` to log token estimates (chars/4) per session in `.aog/sessions/{taskId}.json`.
+
 ## Security
 
 - **Spawns official CLI binaries only** — no OAuth token extraction, no SDK auth hacks

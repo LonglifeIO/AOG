@@ -7,9 +7,12 @@ import { fanOut } from "../council/fanout.js";
 import { crossReview } from "../council/review.js";
 import { synthesize } from "../council/synthesis.js";
 import { saveSession } from "../utils/session.js";
+import { resolveTask } from "../utils/task-file.js";
+import { buildTokenEstimate, tokenLoggingEnabled } from "../utils/tokens.js";
 
 interface CouncilArgs {
-  task: string;
+  task?: string;
+  task_file?: string;
   agents?: AgentId[];
   chairman?: AgentId | "best-scorer";
   run_tests?: boolean;
@@ -24,6 +27,7 @@ export async function handleCouncil(
 ): Promise<Record<string, unknown>> {
   const taskId = randomUUID().slice(0, 8);
   const startTime = Date.now();
+  const task = await resolveTask(args);
   const available = agentManager.getAvailableAgents();
 
   const agents = (args.agents ?? available).filter((a) => agentManager.isAvailable(a));
@@ -39,7 +43,7 @@ export async function handleCouncil(
     // Phase 1: Fan-out
     const implementations = await fanOut({
       taskId,
-      task: args.task,
+      task,
       agents,
       agentManager,
       worktreeManager,
@@ -84,9 +88,10 @@ export async function handleCouncil(
     });
 
     const duration_ms = Date.now() - startTime;
+    const sessionPath = `.aog/sessions/${taskId}.json`;
 
     // Persist full data to session file
-    await saveSession(taskId, {
+    const sessionData: Record<string, unknown> = {
       mode: "council",
       agents: Object.fromEntries(
         Object.entries(implementations).map(([id, impl]) => [id, {
@@ -100,28 +105,34 @@ export async function handleCouncil(
       reviews,
       synthesis,
       duration_ms,
-    });
+    };
+    if (tokenLoggingEnabled()) {
+      sessionData.token_estimates = buildTokenEstimate({
+        prompt: task,
+        response: JSON.stringify(synthesis ?? {}),
+      });
+    }
+    await saveSession(taskId, sessionData);
 
-    // Build compact per-agent summaries
-    const agentSummaries: Record<string, { status: string; files_changed: string[] }> = {};
-    for (const [agentId, impl] of Object.entries(implementations)) {
-      const files = impl.diffSummary
-        ? impl.diffSummary.split("\n").map((l: string) => l.split("|")[0].trim()).filter(Boolean)
-        : [];
-      agentSummaries[agentId] = { status: impl.status, files_changed: files };
+    // Collect all changed files across agents
+    const allFiles: string[] = [];
+    for (const impl of Object.values(implementations)) {
+      if (impl.diffSummary) {
+        const files = impl.diffSummary.split("\n").map((l: string) => l.split("|")[0].trim()).filter(Boolean);
+        for (const f of files) {
+          if (!allFiles.includes(f)) allFiles.push(f);
+        }
+      }
     }
 
-    // Return compact summary
+    // Compact response — under 500 chars
     return {
       taskId,
-      mode: "council",
       status: synthesis ? "success" : "partial",
       summary: synthesis?.summary ?? `${Object.values(implementations).filter(i => i.status === "completed").length}/${agents.length} agents completed`,
-      winner: synthesis?.branch ?? null,
-      strategy: synthesis?.strategy ?? null,
-      agents: agentSummaries,
+      files_changed: allFiles,
       duration_ms,
-      detail: `Full diffs, reviews, and synthesis in .aog/sessions/${taskId}.json`,
+      session_path: sessionPath,
     };
   } finally {
     for (const agent of agents) {

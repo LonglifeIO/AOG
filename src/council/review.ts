@@ -1,6 +1,6 @@
 import type { AgentManager } from "../agents/manager.js";
 import type { AgentId, AgentImplementation, ReviewOutput } from "../agents/types.js";
-import { anonymizedDiff } from "../worktree/diff.js";
+import { anonymizedDiffStat } from "../worktree/diff.js";
 
 const IMPL_LABELS = ["Implementation Alpha", "Implementation Beta", "Implementation Gamma"];
 
@@ -12,8 +12,8 @@ interface CrossReviewOptions {
 }
 
 /**
- * Orchestrate cross-review: each agent reviews all implementations with anonymized diffs.
- * Presentation order is randomized per reviewer to prevent positional bias.
+ * Orchestrate cross-review: each agent reviews all implementations using diff --stat.
+ * Full diffs stay on disk — only stat summaries are sent to reviewers to save tokens.
  */
 export async function crossReview(
   options: CrossReviewOptions
@@ -29,14 +29,14 @@ export async function crossReview(
     return reviews;
   }
 
-  // Generate anonymized diffs
-  const labeledDiffs: Array<{ agent: AgentId; label: string; diff: string }> = [];
+  // Generate anonymized diff stats (not full diffs)
+  const labeledStats: Array<{ agent: AgentId; label: string; stat: string }> = [];
   for (let i = 0; i < completedAgents.length; i++) {
     const agent = completedAgents[i];
     const label = IMPL_LABELS[i] ?? `Implementation ${i + 1}`;
-    const diff = await anonymizedDiff(implementations[agent].worktreePath, label);
-    if (diff) {
-      labeledDiffs.push({ agent, label, diff });
+    const stat = await anonymizedDiffStat(implementations[agent].worktreePath, label);
+    if (stat) {
+      labeledStats.push({ agent, label, stat });
     }
   }
 
@@ -44,9 +44,9 @@ export async function crossReview(
   const reviewPromises = agents
     .filter((reviewer) => agentManager.isAvailable(reviewer))
     .map(async (reviewer) => {
-      const shuffled = [...labeledDiffs].sort(() => Math.random() - 0.5);
-      const allDiffs = shuffled.map((d) => d.diff).join("\n\n---\n\n");
-      const reviewPrompt = buildReviewPrompt(allDiffs, shuffled.map((d) => d.label));
+      const shuffled = [...labeledStats].sort(() => Math.random() - 0.5);
+      const allStats = shuffled.map((d) => d.stat).join("\n\n---\n\n");
+      const reviewPrompt = buildReviewPrompt(allStats, shuffled.map((d) => d.label));
 
       try {
         const result = await agentManager.spawn(reviewer, {
@@ -68,43 +68,11 @@ export async function crossReview(
   return reviews;
 }
 
-function buildReviewPrompt(diffs: string, labels: string[]): string {
-  return `You are reviewing ${labels.length} anonymized implementations of the same coding task.
-Each implementation was created independently.
+function buildReviewPrompt(stats: string, labels: string[]): string {
+  return `Review ${labels.length} implementations (diff --stat shown). Respond with JSON only:
+{"reviews":[{"target":"${labels[0]}","verdict":"approve"|"reject"|"suggest","confidence":0.0-1.0,"summary":"one line","comments":[],"ranking":{"correctness":1-10,"readability":1-10,"performance":1-10,"test_coverage":1-10}}]}
 
-For EACH implementation, provide a JSON review with this exact structure:
-{
-  "reviews": [
-    {
-      "target": "${labels[0]}",
-      "verdict": "approve" | "reject" | "suggest",
-      "confidence": 0.0 to 1.0,
-      "summary": "Brief assessment",
-      "comments": [
-        {
-          "file": "path/to/file",
-          "line": 42,
-          "severity": "critical" | "major" | "minor" | "nit",
-          "comment": "Description of issue or suggestion"
-        }
-      ],
-      "ranking": {
-        "correctness": 1-10,
-        "readability": 1-10,
-        "performance": 1-10,
-        "test_coverage": 1-10
-      }
-    }
-  ]
-}
-
-IMPORTANT: Evaluate each implementation on its own merits. Do not try to identify which agent created which implementation.
-
-Here are the implementations:
-
-${diffs}
-
-Respond with ONLY the JSON object. No other text.`;
+${stats}`;
 }
 
 function parseReviewOutput(

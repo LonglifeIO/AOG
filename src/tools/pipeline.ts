@@ -4,10 +4,13 @@ import type { WorktreeManager } from "../worktree/manager.js";
 import { loadTemplate } from "../pipeline/templates.js";
 import { PipelineEngine } from "../pipeline/engine.js";
 import { saveSession } from "../utils/session.js";
+import { resolveTask } from "../utils/task-file.js";
+import { buildTokenEstimate, tokenLoggingEnabled } from "../utils/tokens.js";
 
 interface PipelineArgs {
   template: string;
-  task: string;
+  task?: string;
+  task_file?: string;
   params?: Record<string, unknown>;
   timeout?: number;
 }
@@ -18,6 +21,7 @@ export async function handlePipeline(
   worktreeManager: WorktreeManager
 ): Promise<Record<string, unknown>> {
   const taskId = randomUUID().slice(0, 8);
+  const task = await resolveTask(args);
 
   const template = await loadTemplate(args.template);
   if (!template) {
@@ -30,7 +34,7 @@ export async function handlePipeline(
   const engine = new PipelineEngine({
     taskId,
     template,
-    task: args.task,
+    task,
     params: args.params ?? {},
     agentManager,
     worktreeManager,
@@ -38,30 +42,37 @@ export async function handlePipeline(
   });
 
   const result = await engine.run();
+  const sessionPath = `.aog/sessions/${taskId}.json`;
 
   // Persist full pipeline state to session file
-  await saveSession(taskId, {
+  const sessionData: Record<string, unknown> = {
     mode: "pipeline",
     template: args.template,
     fullHistory: result.history,
     fullOutput: result.finalOutput,
     status: result.status,
     duration_ms: result.duration_ms,
-  });
+  };
+  if (tokenLoggingEnabled()) {
+    sessionData.token_estimates = buildTokenEstimate({
+      prompt: task,
+      response: result.finalOutput,
+    });
+  }
+  await saveSession(taskId, sessionData);
 
   // Compact stage summaries
   const stages = result.history
     .filter(h => h.event === "completed" || h.event === "failed")
     .map(h => ({ stage: h.stage, event: h.event }));
 
+  // Compact response — under 500 chars
   return {
     taskId,
-    mode: "pipeline",
-    template: args.template,
     status: result.status,
-    summary: result.finalOutput.slice(0, 200),
+    summary: result.finalOutput.slice(0, 120),
     stages_completed: stages,
     duration_ms: result.duration_ms,
-    detail: `Full pipeline output in .aog/sessions/${taskId}.json`,
+    session_path: sessionPath,
   };
 }

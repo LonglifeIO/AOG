@@ -11,7 +11,8 @@ import { handleCancel } from "./tools/cancel.js";
 
 // Tool input schemas
 const DelegateSchema = {
-  task: z.string().describe("Natural language task description"),
+  task: z.string().optional().describe("Task description (provide this OR task_file)"),
+  task_file: z.string().optional().describe("Path to file containing task description (saves caller output tokens)"),
   task_type: z
     .enum(["IMPLEMENT", "REFACTOR", "REVIEW", "RESEARCH", "MIGRATE", "GENERATE", "DEBUG", "ANALYZE"])
     .optional()
@@ -31,7 +32,8 @@ const DelegateSchema = {
 };
 
 const CouncilSchema = {
-  task: z.string().describe("Complex coding task requiring multi-agent consensus"),
+  task: z.string().optional().describe("Task description (provide this OR task_file)"),
+  task_file: z.string().optional().describe("Path to file containing task description (saves caller output tokens)"),
   agents: z
     .array(z.enum(["claude", "codex", "gemini"]))
     .min(2)
@@ -56,7 +58,8 @@ const CouncilSchema = {
 
 const PipelineSchema = {
   template: z.string().describe("Pipeline template name (e.g., 'full-council', 'quick-fix', 'research-synthesis')"),
-  task: z.string().describe("Task description to pass through the pipeline"),
+  task: z.string().optional().describe("Task description (provide this OR task_file)"),
+  task_file: z.string().optional().describe("Path to file containing task description (saves caller output tokens)"),
   params: z.record(z.unknown()).optional().describe("Additional parameters for the pipeline"),
   timeout: z.number().int().optional().describe("Total pipeline timeout in ms"),
   resume_task_id: z.string().optional().describe("Resume a paused pipeline by task ID"),
