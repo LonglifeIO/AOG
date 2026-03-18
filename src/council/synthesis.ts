@@ -66,6 +66,8 @@ export async function synthesize(
       cwd: winnerImpl.worktreePath,
       taskId: `${taskId}-synthesis`,
       timeout: 300_000,
+      // Chairman merges in winner's worktree — needs write access
+      allowPermissionBypass: true,
     });
 
     if (progress) {

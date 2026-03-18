@@ -69,6 +69,8 @@ export async function fanOut(
         taskId,
         timeout: options.timeout ?? 300_000,
         model: options.model?.[agent],
+        // Worktree IS the sandbox — agents need write access to do their job
+        allowPermissionBypass: true,
       });
 
       implementations[agent].exitCode = result.status === "completed" ? 0 : 1;

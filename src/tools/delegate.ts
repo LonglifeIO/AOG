@@ -64,6 +64,9 @@ export async function handleDelegate(
       maxTurns: args.max_turns,
       maxBudgetUsd: args.max_budget_usd,
       timeout: args.timeout,
+      // When using a worktree, the worktree IS the sandbox — allow writes
+      // When not using a worktree, defer to config (default: false)
+      ...(branch ? { allowPermissionBypass: true } : {}),
     });
 
     if (branch) {

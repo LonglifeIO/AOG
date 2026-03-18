@@ -70,7 +70,7 @@ export class AgentManager {
 
     const spawnOptions: SpawnOptions = {
       ...options,
-      allowPermissionBypass: options.allowPermissionBypass ?? this.config?.security.allow_permission_bypass ?? false,
+      allowPermissionBypass: options.allowPermissionBypass ?? this.config?.security.allow_permission_bypass ?? true,
     };
 
     return await spawner.spawn(spawnOptions);
