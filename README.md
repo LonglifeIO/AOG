@@ -222,7 +222,7 @@ defaults:
 
 security:
   require_approval_before_merge: true
-  allow_permission_bypass: false
+  allow_permission_bypass: true
   max_parallel_agents: 3
   max_budget_per_task_usd: 10.0
   audit_logging: true
@@ -240,10 +240,9 @@ npm run dev     # Start MCP server with tsx
 
 ## Not Yet Built
 
-- Unit tests (vitest configured, expanding coverage)
 - `aog init` setup wizard
 - Container isolation mode
-- Pipeline resume after pause
+- Pipeline resume after approval pause
 - Metrics / learned adaptive routing
 
 ## Contributing
