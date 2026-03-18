@@ -9,18 +9,18 @@ AOG needs easy installation and registration across MCP clients (Claude Code, Co
 ## Decision
 
 ### npm Package
-`@aog/mcp-server` with bin entry `aog`. ESM module, TypeScript compiled.
+`aog-mcp-server` with bin entry `aog`. ESM module, TypeScript compiled.
 
 ### Installation
 ```bash
-npx @aog/mcp-server           # Quick start
-npm install -g @aog/mcp-server # Global
-npx @aog/mcp-server init      # Setup wizard
+npx aog-mcp-server           # Quick start
+npm install -g aog-mcp-server # Global
+npx aog-mcp-server init      # Setup wizard
 ```
 
 ### MCP Registration
 ```bash
-claude mcp add --transport stdio aog -- npx -y @aog/mcp-server
+claude mcp add --transport stdio aog -- npx -y aog-mcp-server
 ```
 
 ### Setup Wizard

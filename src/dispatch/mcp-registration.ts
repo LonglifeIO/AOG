@@ -20,7 +20,7 @@ interface McpServerConfig {
 
 const AOG_MCP_CONFIG: McpServerConfig = {
   command: "npx",
-  args: ["-y", "@aog/mcp-server", "--callback-mode"],
+  args: ["-y", "aog-mcp-server", "--callback-mode"],
 };
 
 export async function registerMcpCallback(

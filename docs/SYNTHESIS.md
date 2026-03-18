@@ -139,4 +139,4 @@ All sources agree on SKILL.md (agentskills.io) as cross-CLI format. Ship agents 
 
 ## 8. Distribution
 
-npm package (`@aog/mcp-server`), npx quick start, setup wizard, dual MCP + skills distribution. Works with any subset of CLIs.
+npm package (`aog-mcp-server`), npx quick start, setup wizard, dual MCP + skills distribution. Works with any subset of CLIs.

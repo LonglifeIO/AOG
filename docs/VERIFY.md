@@ -48,7 +48,7 @@ Items that need manual testing before v0.1 release.
 - [ ] Worktree creation speed on large repos (>1GB .git)
 
 ### MCP Server
-- [ ] `npx @aog/mcp-server` — starts and responds to `tools/list`
+- [ ] `npx aog-mcp-server` — starts and responds to `tools/list`
 - [ ] `council_delegate` with each CLI individually
 - [ ] `council_run` with 2+ agents — parallel execution and cross-review
 - [ ] `council_pipeline` with each template
