@@ -59,10 +59,60 @@ All three implementations were anonymized, cross-reviewed, and scored. The chair
 > Delegate mode routes tasks to whatever you have installed. Multi-agent
 > modes unlock when you have two or more.
 
-## Quick Start
+## Setup
+
+### 1. Verify CLIs are installed
 
 ```bash
-# Install and register with Claude Code
+claude --version   # Need 2.1+
+codex --version    # Need 0.106+
+gemini --version   # Need 0.30+
+```
+
+### 2. Verify each CLI is authenticated
+
+Run these one at a time. Each should return JSON and exit cleanly.
+
+```bash
+claude -p "say hi" --output-format json --max-turns 1
+codex exec "say hi" --full-auto --json
+gemini -p "say hi" --output-format json --yolo
+```
+
+If Gemini asks for auth, run `gemini` interactively first to complete Google OAuth.
+
+### 3. Install and register AOG
+
+```bash
+git clone https://github.com/LonglifeIO/AOG.git
+cd AOG
+npm install
+npm run build
+claude mcp add --transport stdio aog -- node /absolute/path/to/AOG/dist/index.js
+```
+
+### 4. Verify AOG is registered
+
+```bash
+claude mcp list   # Should show 'aog'
+```
+
+### 5. First test
+
+Ask Claude Code:
+
+> "Use the council_delegate tool to have codex respond with hello world"
+
+If that works, try a council run:
+
+> "Use council_run with agents claude, codex, and gemini to implement a function called getHealth that returns version, uptime, and timestamp"
+
+## Quick Start
+
+Once setup is complete, you can also register AOG via npx (no local clone needed):
+
+```bash
+# Register with Claude Code
 claude mcp add --transport stdio aog -- npx -y @aog/mcp-server
 
 # Or register with Codex CLI
@@ -183,6 +233,13 @@ npm run dev     # Start MCP server with tsx
 
 This project is in early development. Issues, bug reports, and PRs welcome.
 See `docs/decisions/` for architecture context before making major changes.
+
+## Troubleshooting
+
+- **"MCP failed to reconnect"** → Rebuild with `npm run build`, then re-register with `claude mcp add`
+- **Gemini auth error** → Run `gemini` interactively to complete Google OAuth, then retry
+- **Codex timeout** → Check your ChatGPT Plus/Pro subscription is active
+- **AOG works with any subset of CLIs** — you don't need all three installed
 
 ## License
 
