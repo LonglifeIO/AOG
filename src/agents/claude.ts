@@ -69,7 +69,7 @@ export class ClaudeSpawner implements AgentSpawner {
   private buildArgs(options: SpawnOptions): string[] {
     const args: string[] = ["-p", options.prompt, "--output-format", "json"];
 
-    if (!options.readOnly) {
+    if (!options.readOnly && options.allowPermissionBypass) {
       args.push("--dangerously-skip-permissions");
     }
 

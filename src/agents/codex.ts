@@ -66,7 +66,11 @@ export class CodexSpawner implements AgentSpawner {
     const args: string[] = ["exec", options.prompt, "--json"];
 
     if (!options.readOnly) {
-      args.push("--full-auto");
+      if (options.allowPermissionBypass) {
+        args.push("--full-auto");
+      } else {
+        args.push("--sandbox", "workspace-write");
+      }
     } else {
       args.push("--sandbox", "read-only");
     }

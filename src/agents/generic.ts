@@ -58,6 +58,7 @@ export class GenericCLIAgent implements AgentSpawner {
         cwd: options.cwd,
         timeout: options.timeout ?? this.config.timeout_seconds * 1000,
         env: { ...process.env, NO_COLOR: "1" },
+        stdin: "ignore",
       });
 
       const duration_ms = Date.now() - startTime;

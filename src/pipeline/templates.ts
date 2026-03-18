@@ -82,7 +82,13 @@ const BUILT_IN_TEMPLATES: Record<string, PipelineTemplate> = {
   },
 };
 
+const SAFE_TEMPLATE_NAME = /^[a-zA-Z0-9_-]+$/;
+
 export async function loadTemplate(name: string): Promise<PipelineTemplate | null> {
+  if (!SAFE_TEMPLATE_NAME.test(name)) {
+    throw new Error(`Invalid template name: "${name}". Only alphanumeric, hyphens, and underscores allowed.`);
+  }
+
   // Check custom templates
   for (const dir of ["templates", join(".aog", "templates")]) {
     const customPath = join(process.cwd(), dir, `${name}.yaml`);

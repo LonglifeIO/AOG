@@ -1,6 +1,7 @@
 import type { AgentManager } from "../agents/manager.js";
 import type { AgentId, AgentImplementation, ReviewOutput } from "../agents/types.js";
 import { anonymizedDiffStat } from "../worktree/diff.js";
+import { sanitizeInterAgentOutput } from "../utils/output.js";
 
 const IMPL_LABELS = ["Implementation Alpha", "Implementation Beta", "Implementation Gamma"];
 
@@ -36,7 +37,7 @@ export async function crossReview(
     const label = IMPL_LABELS[i] ?? `Implementation ${i + 1}`;
     const stat = await anonymizedDiffStat(implementations[agent].worktreePath, label);
     if (stat) {
-      labeledStats.push({ agent, label, stat });
+      labeledStats.push({ agent, label, stat: sanitizeInterAgentOutput(stat) });
     }
   }
 

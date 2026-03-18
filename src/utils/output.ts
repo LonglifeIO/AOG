@@ -78,13 +78,25 @@ export function parseGeminiOutput(stdout: string): {
 
 /**
  * Sanitize agent output before passing to another agent.
+ * Strips prompt injection patterns, model-specific delimiters, and secret leaks.
  */
 export function sanitizeInterAgentOutput(text: string): string {
   return text
+    // XML/HTML injection
     .replace(/<system>[\s\S]*?<\/system>/gi, "[REDACTED]")
     .replace(/<instructions>[\s\S]*?<\/instructions>/gi, "[REDACTED]")
-    .replace(/IMPORTANT:\s*ignore\s+(all\s+)?previous\s+instructions/gi, "[REDACTED]")
-    .replace(/you\s+are\s+now\s+/gi, "[REDACTED]")
-    .replace(/forget\s+(all\s+)?previous\s+(instructions|context)/gi, "[REDACTED]")
+    // Llama/Mistral instruction delimiters
+    .replace(/\[INST\][\s\S]*?\[\/INST\]/gi, "[REDACTED]")
+    // Anthropic turn delimiters
+    .replace(/(?:^|\n)\s*(?:Human|User)\s*:[\s\S]*?(?:Assistant|AI)\s*:/gi, "[REDACTED]")
+    // Tool call XML tags (Claude, generic)
+    .replace(/<\/?(?:tool_call|tool_use|tool_result|function_calls|antml_invoke|output)[^>]*>/gi, "[REDACTED]")
+    // Broad "ignore/forget previous" — catches with or without IMPORTANT: prefix
+    .replace(/(?:ignore|forget|disregard|override)\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions|context|rules|prompts|directives)/gi, "[REDACTED]")
+    // Identity override attempts
+    .replace(/(?:you\s+are\s+now|act\s+as|pretend\s+(?:to\s+be|you\s+are)|roleplay\s+as)\s+/gi, "[REDACTED]")
+    // SYSTEM: prefix injection
+    .replace(/(?:^|\n)\s*SYSTEM\s*:/gi, "[REDACTED]")
+    // Secret/credential variable interpolation
     .replace(/\$\{?\w*(?:TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL)\w*\}?/gi, "[REDACTED]");
 }

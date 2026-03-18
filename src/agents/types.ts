@@ -212,6 +212,7 @@ export interface SpawnOptions {
   systemPrompt?: string;
   outputSchema?: Record<string, unknown>;
   readOnly?: boolean;
+  allowPermissionBypass?: boolean;
   scopedFiles?: string[];
   readOnlyContext?: string[];
 }

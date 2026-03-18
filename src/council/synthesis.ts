@@ -6,6 +6,7 @@ import type {
   ReviewOutput,
   SynthesisResult,
 } from "../agents/types.js";
+import { sanitizeInterAgentOutput } from "../utils/output.js";
 
 interface SynthesizeOptions {
   taskId: string;
@@ -161,12 +162,10 @@ Scores: ${scores.map((s) => `${s.agent}=${s.totalScore}`).join(", ")}
   for (const other of others) {
     const impl = implementations[other.agent];
     if (impl?.diffSummary) {
-      // Use diff stat, not full diff
-      prompt += `### ${other.agent} (${other.totalScore}) — changed files:\n${impl.diffSummary}\n\n`;
+      prompt += `### ${other.agent} (${other.totalScore}) — changed files:\n${sanitizeInterAgentOutput(impl.diffSummary)}\n\n`;
     }
     if (impl?.diff) {
-      // Include limited diff context for actual cherry-picking
-      prompt += `Key changes (truncated):\n\`\`\`diff\n${impl.diff.slice(0, 3000)}\n\`\`\`\n\n`;
+      prompt += `Key changes (truncated):\n\`\`\`diff\n${sanitizeInterAgentOutput(impl.diff.slice(0, 3000))}\n\`\`\`\n\n`;
     }
   }
 

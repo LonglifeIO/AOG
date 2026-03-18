@@ -1,10 +1,11 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentSpawner, AgentId, AgentResult, SpawnOptions } from "./types.js";
+import type { AgentSpawner, AgentId, AgentResult, SpawnOptions, AogConfig } from "./types.js";
 import { ClaudeSpawner } from "./claude.js";
 import { CodexSpawner } from "./codex.js";
 import { GeminiSpawner } from "./gemini.js";
+import { loadConfig } from "../utils/config.js";
 
 interface PidEntry {
   taskId: string;
@@ -18,6 +19,7 @@ export class AgentManager {
   private available: Set<AgentId> = new Set();
   private pids: Map<number, PidEntry> = new Map();
   private stateDir: string;
+  private config: AogConfig | null = null;
 
   constructor(private projectRoot: string) {
     this.stateDir = join(projectRoot, ".aog");
@@ -28,6 +30,7 @@ export class AgentManager {
 
   async initialize(): Promise<void> {
     await mkdir(this.stateDir, { recursive: true });
+    this.config = await loadConfig(this.projectRoot);
     await this.detectAvailableCLIs();
     await this.cleanupOrphanedProcesses();
   }
@@ -65,7 +68,12 @@ export class AgentManager {
       throw new Error(`Agent ${agent} is not available (CLI not installed)`);
     }
 
-    return await spawner.spawn(options);
+    const spawnOptions: SpawnOptions = {
+      ...options,
+      allowPermissionBypass: options.allowPermissionBypass ?? this.config?.security.allow_permission_bypass ?? false,
+    };
+
+    return await spawner.spawn(spawnOptions);
   }
 
   async spawnParallel(
