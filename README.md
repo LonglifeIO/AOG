@@ -84,11 +84,18 @@ If Gemini asks for auth, run `gemini` interactively first to complete Google OAu
 ### 3. Install and register AOG
 
 ```bash
-git clone https://github.com/LonglifeIO/AOG.git
-cd AOG
-npm install
-npm run build
-claude mcp add --transport stdio aog -- node /absolute/path/to/AOG/dist/index.js
+# One command — no clone needed
+claude mcp add --transport stdio aog -- npx -y aog-mcp-server
+```
+
+Or register with other clients:
+
+```bash
+# Codex CLI
+codex mcp add aog -- npx -y aog-mcp-server
+
+# Gemini CLI (~/.gemini/settings.json)
+# { "mcpServers": { "aog": { "command": "npx", "args": ["-y", "aog-mcp-server"] } } }
 ```
 
 ### 4. Verify AOG is registered

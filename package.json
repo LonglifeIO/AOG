@@ -1,6 +1,6 @@
 {
-  "name": "@aog/mcp-server",
-  "version": "0.1.0",
+  "name": "aog-mcp-server",
+  "version": "1.0.0",
   "description": "Multi-agent coding orchestrator — CLI Council for Claude Code, Codex CLI, and Gemini CLI via MCP",
   "type": "module",
   "main": "./dist/index.js",
