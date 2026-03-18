@@ -76,6 +76,16 @@ export class PipelineEngine {
 
         try {
           await this.executeStage(stage);
+
+          // Approval stage pauses the pipeline — stop the loop
+          if ((this.state.status as string) === "waiting_approval") {
+            this.recordTransition(stage.id, "completed", undefined, { paused: true });
+            if (this.options.progress) {
+              await this.options.progress.pipelineStageCompleted(stage.id);
+            }
+            break;
+          }
+
           this.recordTransition(stage.id, "completed");
           if (this.options.progress) {
             await this.options.progress.pipelineStageCompleted(stage.id);
@@ -197,18 +207,71 @@ export class PipelineEngine {
     }
   }
 
+  /**
+   * Execute a sequential stage. If the stage has a prompt_template, spawn an agent
+   * to execute it. If it has a command, run that as a shell command. A stage can
+   * have both (agent work + verification command).
+   */
   private async executeSequential(stage: PipelineTemplate["stages"][0]): Promise<void> {
-    if (!stage.command) return;
+    // If the stage has a prompt template, spawn an agent to execute it
+    if (stage.prompt_template) {
+      const agents = stage.agents ?? this.options.agentManager.getAvailableAgents();
+      const agent = agents.find((a) => this.options.agentManager.isAvailable(a));
 
-    await execa("sh", ["-c", stage.command], {
-      cwd: process.cwd(),
-      timeout: (stage.timeout ?? 120) * 1000,
-    });
+      if (!agent) {
+        throw new Error(`No available agent for sequential stage "${stage.id}"`);
+      }
+
+      // Build the prompt: combine task context with the stage's prompt template
+      const prompt = `${this.options.task}\n\n---\n\n${stage.prompt_template}`;
+
+      if (this.options.progress) {
+        await this.options.progress.notify(`${agent}: working on ${stage.id}…`, stage.id, agent);
+      }
+
+      const result = await this.options.agentManager.spawn(agent, {
+        prompt,
+        cwd: process.cwd(),
+        taskId: `${this.options.taskId}-${stage.id}`,
+        timeout: stage.timeout ? stage.timeout * 1000 : 300_000,
+        allowPermissionBypass: true,
+      });
+
+      if (result.status !== "completed") {
+        throw new Error(`Agent ${agent} failed on stage "${stage.id}": ${result.result.slice(0, 200)}`);
+      }
+
+      if (this.options.progress) {
+        await this.options.progress.notify(
+          `${agent}: completed ${stage.id} (${(result.duration_ms / 1000).toFixed(0)}s)`,
+          stage.id,
+          agent
+        );
+      }
+    }
+
+    // If the stage has a shell command, run it
+    if (stage.command) {
+      await execa("sh", ["-c", stage.command], {
+        cwd: process.cwd(),
+        timeout: (stage.timeout ?? 120) * 1000,
+      });
+    }
+
+    // A stage with neither prompt_template nor command is a no-op (log it)
+    if (!stage.prompt_template && !stage.command) {
+      console.error(`[aog] Warning: sequential stage "${stage.id}" has no prompt_template or command — skipping`);
+    }
   }
 
   private async executeApproval(): Promise<void> {
-    this.state.status = "waiting_approval";
-    await this.persistState();
+    // TODO: Pipeline resume after approval pause is not yet built.
+    // For now, log a warning and auto-approve so the pipeline continues.
+    // When resume is implemented, this will set waiting_approval and break.
+    console.error(
+      `[aog] Approval stage auto-approved (pipeline resume not yet implemented). ` +
+      `Review outputs in .aog/sessions/${this.options.taskId}.json`
+    );
   }
 
   private recordTransition(
