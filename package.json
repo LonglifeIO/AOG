@@ -14,7 +14,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.0",
@@ -53,9 +54,6 @@
   "files": [
     "dist",
     "templates",
-    "skills",
-    ".claude",
-    ".codex",
-    ".gemini"
+    "skills"
   ]
 }

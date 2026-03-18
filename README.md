@@ -107,24 +107,6 @@ If that works, try a real task:
 
 > "Use AOG to synthesize research and build a rate limiter for the API endpoints"
 
-## Quick Start
-
-Once setup is complete, you can also register AOG via npx (no local clone needed):
-
-```bash
-# Register with Claude Code
-claude mcp add --transport stdio aog -- npx -y @aog/mcp-server
-
-# Or register with Codex CLI
-codex mcp add aog -- npx -y @aog/mcp-server
-
-# Or add to Gemini CLI (~/.gemini/settings.json)
-# { "mcpServers": { "aog": { "command": "npx", "args": ["-y", "@aog/mcp-server"] } } }
-```
-
-Then ask your AI coding agent:
-> "Use AOG to synthesize research and build a rate limiter for the API endpoints"
-
 ## Three Modes
 
 ### DELEGATE — Single Agent Routing
