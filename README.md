@@ -101,11 +101,11 @@ claude mcp list   # Should show 'aog'
 
 Ask Claude Code:
 
-> "Use the council_delegate tool to have codex respond with hello world"
+> "Use AOG to have codex say hello world"
 
-If that works, try a council run:
+If that works, try a real task:
 
-> "Use council_run with agents claude, codex, and gemini to implement a function called getHealth that returns version, uptime, and timestamp"
+> "Use AOG to synthesize research and build a rate limiter for the API endpoints"
 
 ## Quick Start
 
@@ -123,7 +123,7 @@ codex mcp add aog -- npx -y @aog/mcp-server
 ```
 
 Then ask your AI coding agent:
-> "Use the council_run tool to implement a rate limiter for the API endpoints"
+> "Use AOG to synthesize research and build a rate limiter for the API endpoints"
 
 ## Three Modes
 
