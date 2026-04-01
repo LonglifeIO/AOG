@@ -3,8 +3,10 @@ import type { AgentSpawner, AgentResult, SpawnOptions, CostInfo, SessionInfo } f
 
 interface CodexTurnEvent {
   type: string;
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: { input_tokens: number; output_tokens: number; cached_input_tokens?: number };
   message?: { content: Array<{ type: string; text?: string }> };
+  item?: { id?: string; type?: string; text?: string };
+  thread_id?: string;
   threadId?: string;
 }
 
@@ -105,16 +107,20 @@ export class CodexSpawner implements AgentSpawner {
           tokensOut += event.usage.output_tokens;
         }
 
-        if (event.type === "item.completed" && event.message?.content) {
-          for (const block of event.message.content) {
-            if (block.type === "text" && block.text) {
-              finalText += block.text;
+        if (event.type === "item.completed") {
+          if (event.item?.text) {
+            finalText += event.item.text;
+          } else if (event.message?.content) {
+            for (const block of event.message.content) {
+              if (block.type === "text" && block.text) {
+                finalText += block.text;
+              }
             }
           }
         }
 
-        if (event.threadId) {
-          threadId = event.threadId;
+        if (event.thread_id || event.threadId) {
+          threadId = event.thread_id ?? event.threadId ?? null;
         }
       } catch {
         finalText += line;

@@ -17,7 +17,7 @@ const DelegateSchema = {
   task_type: z
     .enum(["IMPLEMENT", "REFACTOR", "REVIEW", "RESEARCH", "MIGRATE", "GENERATE", "DEBUG", "ANALYZE"])
     .optional()
-    .describe("Task classification for routing. Auto-detected if omitted."),
+    .describe("Task classification for routing. Defaults to IMPLEMENT if omitted. RESEARCH requires explicit user request."),
   preferred_agent: z
     .enum(["claude", "codex", "gemini"])
     .optional()

@@ -44,18 +44,18 @@ const BUILT_IN_TEMPLATES: Record<string, PipelineTemplate> = {
   "migration": {
     name: "migration",
     version: 1,
-    timeout: 3600,
-    description: "Research, plan consensus, implement stages, review",
+    timeout: 2400,
+    description: "Plan consensus, implement stages, review (bring your own research)",
     agents: [
       { id: "claude", cli: "claude", timeout: 600, flags: ["--max-turns", "30"] },
       { id: "codex", cli: "codex", timeout: 300, flags: ["--full-auto"] },
       { id: "gemini", cli: "gemini", timeout: 300, flags: ["--yolo"] },
     ],
     stages: [
-      { id: "research", type: "fan-out", agents: ["claude", "gemini"], on_failure: "continue" },
-      { id: "plan-review", type: "cross-review", anonymize: true },
+      { id: "scan", type: "sequential", agents: ["gemini"], timeout: 120, on_failure: "continue",
+        prompt_template: "Briefly scan the codebase and any existing research/ or docs/ for migration context. Produce a short summary of what exists and what needs to change. Do NOT do deep research — just catalog what's there." },
       { id: "approve-plan", type: "approval", mode: "interactive" },
-      { id: "implement", type: "fan-out", agents: ["claude", "codex"], on_failure: "abort" },
+      { id: "implement", type: "fan-out", agents: ["claude", "codex", "gemini"], on_failure: "abort" },
       { id: "test", type: "test", command: "npm test", timeout: 300 },
       { id: "final-review", type: "cross-review", anonymize: true },
       { id: "synthesize", type: "chairman", chairman: "claude", strategy: "chairman-merge" },

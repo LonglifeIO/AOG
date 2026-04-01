@@ -93,11 +93,11 @@ export async function handleDelegate(
       await progress.agentCompleted(agent, result.duration_ms / 1000, filesChanged.length || undefined);
     }
 
-    // Compact response — under 500 chars
     return {
       taskId,
       status: result.status,
       summary: `${agent} completed in ${(result.duration_ms / 1000).toFixed(1)}s`,
+      result: result.result || "",
       files_changed: filesChanged,
       duration_ms: result.duration_ms,
       session_path: sessionPath,
