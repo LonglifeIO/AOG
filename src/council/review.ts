@@ -3,30 +3,40 @@ import type { AgentId, AgentImplementation, ReviewOutput } from "../agents/types
 import type { ProgressReporter } from "../interaction/progress.js";
 import { anonymizedDiffStat } from "../worktree/diff.js";
 import { sanitizeInterAgentOutput } from "../utils/output.js";
+import type { CouncilOperation } from "./guardrails.js";
 
 const IMPL_LABELS = ["Implementation Alpha", "Implementation Beta", "Implementation Gamma"];
+const MAX_CONTENT_CHARS = 6000;
 
 interface CrossReviewOptions {
   taskId: string;
   implementations: Record<string, AgentImplementation>;
   agents: AgentId[];
   agentManager: AgentManager;
+  operation: CouncilOperation;
   progress?: ProgressReporter;
 }
 
 /**
- * Orchestrate cross-review: each agent reviews all implementations using diff --stat.
- * Full diffs stay on disk — only stat summaries are sent to reviewers to save tokens.
+ * Orchestrate cross-review across council outputs.
+ *
+ * For "build" we send anonymized diff stats (file names + line counts).
+ * For "research" and "synthesize" we send the (sanitized, anonymized,
+ * truncated) markdown content each agent wrote to `output_path`. The
+ * rubric (correctness/readability/performance/test_coverage) is shared
+ * across operations; scoring weights diverge in synthesis.
  */
 export async function crossReview(
   options: CrossReviewOptions
 ): Promise<Record<string, ReviewOutput[]>> {
-  const { taskId, implementations, agents, agentManager, progress } = options;
+  const { taskId, implementations, agents, agentManager, operation, progress } = options;
   const reviews: Record<string, ReviewOutput[]> = {};
 
-  const completedAgents = agents.filter(
-    (a) => implementations[a]?.status === "completed" && implementations[a]?.diff
-  );
+  const completedAgents = agents.filter((a) => {
+    const impl = implementations[a];
+    if (!impl || impl.status !== "completed") return false;
+    return operation === "build" ? !!impl.diff : !!impl.outputContent;
+  });
 
   if (completedAgents.length < 2) {
     return reviews;
@@ -37,38 +47,51 @@ export async function crossReview(
     await progress.reviewStarted(reviewers);
   }
 
-  // Generate anonymized diff stats (not full diffs)
-  const labeledStats: Array<{ agent: AgentId; label: string; stat: string }> = [];
+  // Build per-agent review payloads. For build, this is the diff --stat;
+  // for research/synthesize, it's the markdown content (truncated and
+  // sanitized) prefixed with the implementation label.
+  const labeled: Array<{ agent: AgentId; label: string; payload: string }> = [];
   for (let i = 0; i < completedAgents.length; i++) {
     const agent = completedAgents[i];
     const label = IMPL_LABELS[i] ?? `Implementation ${i + 1}`;
-    const stat = await anonymizedDiffStat(implementations[agent].worktreePath, label);
-    if (stat) {
-      labeledStats.push({ agent, label, stat: sanitizeInterAgentOutput(stat) });
+    let payload: string | null = null;
+
+    if (operation === "build") {
+      payload = await anonymizedDiffStat(implementations[agent].worktreePath, label);
+    } else {
+      const content = implementations[agent].outputContent ?? "";
+      const truncated = content.length > MAX_CONTENT_CHARS
+        ? content.slice(0, MAX_CONTENT_CHARS) + "\n\n…[truncated]"
+        : content;
+      const anonymized = anonymizeAgentReferences(truncated);
+      payload = `## ${label}\n\n${anonymized}`;
+    }
+
+    if (payload) {
+      labeled.push({ agent, label, payload: sanitizeInterAgentOutput(payload) });
     }
   }
 
-  // Each agent reviews all implementations
-  const reviewPromises = reviewers
-    .map(async (reviewer) => {
-      const shuffled = [...labeledStats].sort(() => Math.random() - 0.5);
-      const allStats = shuffled.map((d) => d.stat).join("\n\n---\n\n");
-      const reviewPrompt = buildReviewPrompt(allStats, shuffled.map((d) => d.label));
+  // Each agent reviews all implementations.
+  const reviewPromises = reviewers.map(async (reviewer) => {
+    const shuffled = [...labeled].sort(() => Math.random() - 0.5);
+    const allPayloads = shuffled.map((d) => d.payload).join("\n\n---\n\n");
+    const reviewPrompt = buildReviewPrompt(allPayloads, shuffled.map((d) => d.label), operation);
 
-      try {
-        const result = await agentManager.spawn(reviewer, {
-          prompt: reviewPrompt,
-          cwd: process.cwd(),
-          taskId: `${taskId}-review-${reviewer}`,
-          readOnly: true,
-          timeout: 120_000,
-        });
+    try {
+      const result = await agentManager.spawn(reviewer, {
+        prompt: reviewPrompt,
+        cwd: process.cwd(),
+        taskId: `${taskId}-review-${reviewer}`,
+        readOnly: true,
+        timeout: 120_000,
+      });
 
-        reviews[reviewer] = parseReviewOutput(result.result, reviewer, shuffled);
-      } catch {
-        reviews[reviewer] = [];
-      }
-    });
+      reviews[reviewer] = parseReviewOutput(result.result, reviewer, shuffled);
+    } catch {
+      reviews[reviewer] = [];
+    }
+  });
 
   await Promise.allSettled(reviewPromises);
 
@@ -79,11 +102,27 @@ export async function crossReview(
   return reviews;
 }
 
-function buildReviewPrompt(stats: string, labels: string[]): string {
-  return `Review ${labels.length} implementations (diff --stat shown). Respond with JSON only:
+function buildReviewPrompt(payloads: string, labels: string[], operation: CouncilOperation): string {
+  const operationDescription: Record<CouncilOperation, string> = {
+    build:
+      "Review the following implementations (diff --stat shown). Rank each on " +
+      "correctness, readability, performance, and test_coverage (1-10).",
+    research:
+      "Review the following research documents (markdown content shown). " +
+      "Rank each on correctness (factual accuracy), readability (clarity and " +
+      "structure), performance (depth of evidence), and test_coverage " +
+      "(comprehensiveness vs the question) (1-10).",
+    synthesize:
+      "Review the following implementation plans (markdown content shown). " +
+      "Rank each on correctness (feasibility), readability (ordering and " +
+      "structure), performance (groundedness in research), and test_coverage " +
+      "(completeness of the plan) (1-10).",
+  };
+
+  return `${operationDescription[operation]} Respond with JSON only:
 {"reviews":[{"target":"${labels[0]}","verdict":"approve"|"reject"|"suggest","confidence":0.0-1.0,"summary":"one line","comments":[],"ranking":{"correctness":1-10,"readability":1-10,"performance":1-10,"test_coverage":1-10}}]}
 
-${stats}`;
+${payloads}`;
 }
 
 function parseReviewOutput(
@@ -120,4 +159,8 @@ function parseReviewOutput(
   } catch {
     return [];
   }
+}
+
+function anonymizeAgentReferences(text: string): string {
+  return text.replace(/\b(claude|codex|gemini)\b/gi, "agent");
 }

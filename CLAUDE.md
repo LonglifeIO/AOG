@@ -2,9 +2,10 @@
 
 ## Status
 
-Built and tested. All three CLIs (Claude Code, Codex CLI, Gemini CLI) confirmed
-working end-to-end. Council mode with parallel worktrees, cross-review, and
-chairman synthesis tested and operational.
+v2.0.0 — council is now the default for `aog_build`, `aog_research`,
+and `aog_synthesize`. Single-CLI environments auto-degrade to solo with
+a stderr notice. Solo mode (the prior default) is still available via
+`mode: "solo"` or `defaults.mode: solo` in `aog.config.yaml`.
 
 ## What is this?
 
@@ -28,11 +29,26 @@ MCP Client (Claude Desktop / Cursor / VS Code)
        └── Dispatch (worker environment, instructions, skills)
 ```
 
-## Three Execution Modes
+## Default behavior: council on every task
 
-1. **DELEGATE** — Route a single task to the best agent based on task type
-2. **COUNCIL** — Fan out to all agents in parallel, cross-review, chairman synthesis
-3. **PIPELINE** — Multi-stage sequential/parallel workflow from YAML templates
+`aog_build`, `aog_research`, and `aog_synthesize` all run as a council
+by default: every available CLI works the same task in parallel git
+worktrees, outputs are anonymized and cross-reviewed, and a chairman
+(Claude by default) synthesizes the result.
+
+## Two escape hatches
+
+- **`mode: "solo"`** — single-agent routing-by-strength. Cost or speed
+  escape for trivial tasks. AOG picks the CLI best suited to the
+  `task_type` (or honors an explicit `agent`).
+- **`aog_pipeline`** — multi-stage YAML workflow with custom stages,
+  approval gates, and per-stage agent selection.
+
+## Single-CLI graceful fallback
+
+If only one CLI is installed and authenticated, council mode silently
+falls back to solo with a one-time stderr notice. AOG works with any
+subset of CLIs.
 
 ## Key Design Decisions
 
@@ -45,13 +61,13 @@ MCP Client (Claude Desktop / Cursor / VS Code)
 
 ## Project Structure (78 files, 34 TypeScript modules)
 
-- `src/server.ts` — MCP server with 5 Zod-validated tool definitions
+- `src/server.ts` — MCP server with 6 primary tools + `aog_council` deprecation alias
 - `src/agents/` — Per-CLI spawners (claude.ts, codex.ts, gemini.ts), generic base, manager
 - `src/worktree/` — Git worktree lifecycle, merge-base diff extraction
-- `src/council/` — Fan-out, anonymized cross-review, 50/30/20 scoring, chairman synthesis
+- `src/council/` — Operation-aware fan-out + cross-review + chairman synthesis. `pipeline.ts` orchestrates; `guardrails.ts` wraps prompts per operation. Build scores 50/30/20 (test/review/impact); research/synthesize score 0/70/30 (review/depth).
 - `src/pipeline/` — YAML template engine, state machine, inter-stage context
 - `src/router/` — Task type → agent routing matrix
-- `src/tools/` — MCP tool handlers (delegate, council, pipeline, status, cancel)
+- `src/tools/` — MCP tool handlers (build, research, synthesize, pipeline, status, cancel; delegate.ts is the internal solo-mode helper)
 - `src/interaction/` — Decision gates, liveness monitoring, progress reporting
 - `src/conflict/` — File scoping, overlap detection, resolution strategies
 - `src/dispatch/` — Worker environment setup, per-CLI instruction generation
@@ -72,11 +88,13 @@ npm test             # Run vitest (no tests yet)
 
 | Tool | Description |
 |------|-------------|
-| `council_delegate` | Route task to best single agent |
-| `council_run` | Fan-out + cross-review + synthesis |
-| `council_pipeline` | Execute named pipeline template |
-| `council_status` | Check session status |
-| `council_cancel` | Cancel running session |
+| `aog_build` | Implement / fix / refactor. Council by default; `mode: "solo"` for single agent. |
+| `aog_research` | Investigate, write `research/{slug}.md`. Council by default. |
+| `aog_synthesize` | Research → plan. Council by default. `then_build: true` chains into `aog_build`. |
+| `aog_pipeline` | Run a named multi-stage YAML pipeline. |
+| `aog_status` | Inspect a running or completed session. |
+| `aog_cancel` | Stop a running session and clean up worktrees. |
+| `aog_council` | **Deprecated alias** → forwards to `aog_build` mode=council. Removed in v2.1.0. |
 
 ## Conventions
 
@@ -91,7 +109,6 @@ npm test             # Run vitest (no tests yet)
 
 ## Not Yet Built
 
-- Unit tests
 - `aog init` setup wizard
 - Container isolation mode
 - Pipeline resume after approval pause

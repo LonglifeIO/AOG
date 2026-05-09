@@ -14,6 +14,7 @@ const DEFAULT_CONFIG: AogConfig = {
     chairman: "claude",
     timeout: 300000,
     pipeline: "full-council",
+    mode: "council",
   },
   security: {
     require_approval_before_merge: true,

@@ -56,7 +56,7 @@ export async function handleDelegate(
   }
 
   try {
-    const result = await agentManager.spawn(agent, {
+    const spawnOptions = {
       prompt: task,
       cwd,
       taskId,
@@ -67,7 +67,11 @@ export async function handleDelegate(
       // When using a worktree, the worktree IS the sandbox — allow writes
       // When not using a worktree, defer to config (default: false)
       ...(branch ? { allowPermissionBypass: true } : {}),
-    });
+    };
+
+    const result = progress
+      ? await progress.withHeartbeat(agent, "delegate", () => agentManager.spawn(agent, spawnOptions))
+      : await agentManager.spawn(agent, spawnOptions);
 
     if (branch) {
       result.changes = await extractChanges(cwd, branch);

@@ -89,21 +89,47 @@ export async function loadTemplate(name: string): Promise<PipelineTemplate | nul
     throw new Error(`Invalid template name: "${name}". Only alphanumeric, hyphens, and underscores allowed.`);
   }
 
-  // Check custom templates
-  for (const dir of ["templates", join(".aog", "templates")]) {
-    const customPath = join(process.cwd(), dir, `${name}.yaml`);
-    if (existsSync(customPath)) {
-      try {
-        const content = await readFile(customPath, "utf-8");
-        return parseYaml(content) as PipelineTemplate;
-      } catch {
-        // Fall through
-      }
+  // User customizations live in .aog/templates/ — anything there overrides
+  // the built-in template of the same name. Built-ins are the single source
+  // of truth (in BUILT_IN_TEMPLATES below); we no longer ship YAML duplicates
+  // in the package because they drifted silently.
+  let template: PipelineTemplate | null = null;
+  const customPath = join(process.cwd(), ".aog", "templates", `${name}.yaml`);
+  if (existsSync(customPath)) {
+    try {
+      const content = await readFile(customPath, "utf-8");
+      template = parseYaml(content) as PipelineTemplate;
+    } catch {
+      // Fall through to built-in
     }
   }
 
-  // Also check for research-synthesis (loaded from YAML since it uses prompt_template)
-  return BUILT_IN_TEMPLATES[name] ?? null;
+  if (!template) {
+    template = BUILT_IN_TEMPLATES[name] ?? null;
+  }
+
+  if (template) {
+    validateTemplateTimeouts(template);
+  }
+
+  return template;
+}
+
+/**
+ * Warn when a template's pipeline-level timeout is shorter than the sum of its
+ * stage timeouts — a configuration that masks itself as a hang because the
+ * pipeline timeout fires mid-stage but the engine doesn't kill in-flight
+ * spawns.
+ */
+function validateTemplateTimeouts(template: PipelineTemplate): void {
+  const stageSum = template.stages.reduce((acc, s) => acc + (s.timeout ?? 0), 0);
+  if (stageSum > template.timeout) {
+    console.error(
+      `[aog] Template "${template.name}" has pipeline timeout ${template.timeout}s ` +
+      `but stage timeouts sum to ${stageSum}s. Stages may exceed the pipeline budget — ` +
+      `consider raising "timeout" or shortening stage timeouts.`
+    );
+  }
 }
 
 // Register the research-synthesis template as built-in

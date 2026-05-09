@@ -56,8 +56,9 @@ All three implementations were anonymized, cross-reviewed, and scored. The chair
   - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (Google account, free tier available)
 
 > **Don't have all three?** AOG works with any subset — even just one CLI.
-> Delegate mode routes tasks to whatever you have installed. Multi-agent
-> modes unlock when you have two or more.
+> Council mode silently falls back to solo on single-CLI environments
+> with a one-time stderr notice. Pass `mode: "solo"` to opt out of
+> council on any individual call.
 
 ## Setup
 
@@ -91,6 +92,8 @@ If Gemini asks for auth, run `gemini` interactively first to complete Google OAu
 claude mcp add --transport stdio aog -- npx -y aog-mcp-server
 ```
 
+> **AOG runs council mode by default** (uses all available CLIs in parallel). For single-agent behavior, pass `mode: "solo"` or set `defaults.mode: solo` in `aog.config.yaml`.
+
 **Option B — Run from source:**
 
 ```bash
@@ -111,49 +114,86 @@ claude mcp list   # Should show 'aog'
 
 Ask Claude Code:
 
-> "Use AOG to have codex say hello world"
+> "Use AOG to build a rate limiter for the API endpoints"
 
-If that works, try a real task:
+AOG runs this as a council by default — every available CLI builds the
+feature in parallel git worktrees, cross-reviews, and a chairman merges
+the best of each. Three opinions, one call. Pass `mode: "solo"` if you
+just want one agent.
 
-> "Use AOG to synthesize research and build a rate limiter for the API endpoints"
+## How AOG Works
 
-## Three Modes
+AOG runs every task as a **council** by default. You ask once; every
+available CLI works the problem in parallel git worktrees; outputs are
+anonymized and cross-reviewed; a chairman (Claude by default) synthesizes
+the best of each into a single result.
 
-### DELEGATE — Single Agent Routing
+When you want a single agent for cost or speed, pass `mode: "solo"` and
+AOG routes by task type. When you need multi-stage workflows with
+approval gates, use `aog_pipeline`.
 
-Routes each task to the best available CLI:
+## Tools
 
-| Task Type | Preferred Agent | Why |
-|-----------|----------------|-----|
-| IMPLEMENT | Claude Code | Best multi-file planning |
-| RESEARCH | Gemini CLI | 1M token context window |
-| GENERATE | Codex CLI | Fastest execution |
-| REVIEW | Gemini CLI | Large context for diffs |
-| DEBUG | Claude Code | Diagnostic reasoning |
+| Tool | Job | Default behavior |
+|------|-----|------------------|
+| **`aog_build`** | Implement / fix / refactor a task | Council on every call. `mode: "solo"` for single agent. |
+| **`aog_research`** | Investigate a question, write structured findings | Council. Output: `research/{slug}.md`. |
+| **`aog_synthesize`** | Turn research into an implementation plan | Council. Output: `docs/IMPLEMENTATION-PLAN.md`. `then_build: true` chains into `aog_build`. |
+| **`aog_pipeline`** | Multi-stage YAML workflow | Per-template. For approval gates, conditional stages, custom per-stage agent selection. |
+| **`aog_status`** | Inspect a session | Returns progress, diffs, reviews. |
+| **`aog_cancel`** | Stop a session | Terminates agents and removes worktrees. |
+| `aog_council` | **Deprecated alias** | Forwards to `aog_build` with `mode: "council"`. Removed in v2.1.0. |
 
-### COUNCIL — Multi-Agent Consensus
+### Operations are independent
 
-1. Each agent gets an isolated git worktree
-2. All agents implement the task simultaneously
-3. Tests run in each worktree
-4. Agents cross-review anonymized diffs (Implementation A/B/C)
-5. Chairman merges the best parts into the final implementation
+Research, synthesize, and build are separate calls. The MCP client
+chains them — there's no forced pipeline. For from-scratch work,
+`aog_research` → `aog_synthesize` → `aog_build` works as three explicit
+calls. To shortcut the latter two, pass `then_build: true` to
+`aog_synthesize` — both phases run council by default.
 
-### PIPELINE — Staged Workflows
+### Single-agent escape hatch
 
-Chain specialized agents across multiple stages:
+`mode: "solo"` runs one CLI with the routing-by-strength matrix:
+
+| Tool | task_type | Routes to |
+|------|-----------|-----------|
+| `aog_build` | IMPLEMENT (default) | Claude |
+| `aog_build` | GENERATE | Codex |
+| `aog_build` | RESEARCH / REVIEW / ANALYZE | Gemini |
+| `aog_build` | DEBUG / REFACTOR / MIGRATE | Claude |
+| `aog_research` | (n/a) | Gemini |
+| `aog_synthesize` | (n/a) | Claude |
+
+See `docs/routing.md` for the full table including fallbacks. Set
+`defaults.mode: solo` in `aog.config.yaml` to flip the global default.
+
+### Single-CLI users
+
+If only one CLI is installed, council mode silently falls back to solo
+and prints a one-time stderr notice (`Council mode requires 2+ CLIs;
+running solo with claude.`). Every tool works with any subset.
+
+### Pipeline templates
+
+`aog_pipeline` is the customization surface for advanced workflows —
+approval gates, conditional stages, per-stage agent selection. For the
+common research → plan → build flow, prefer `aog_synthesize` with
+`then_build: true`.
+
+Built-in templates available via `aog_pipeline`:
 
 | Template | Stages |
 |----------|--------|
-| **full-council** | implement → test → review → synthesize → final test |
+| **full-council** | implement → test → cross-review → synthesize → final test |
 | **quick-fix** | fix → test → review |
-| **migration** | research → plan → approve → implement → test → review → synthesize |
+| **migration** | scan → approve → implement → test → review → synthesize |
 | **dependency-update** | analyze → update → test → review |
-| **research-synthesis** | synthesize research → plan → approve → build |
+| **research-synthesis** | synthesize → plan → approve → build (custom variant of the `then_build` shortcut, with an interactive approval gate) |
 
-The **research-synthesis** pipeline is the simplest way to start: drop research
-outputs from multiple LLMs into a `research/` folder, then let AOG synthesize
-and build from the plan.
+To customize a template, drop a YAML override at `.aog/templates/{name}.yaml`
+in your project. AOG loads user overrides first; otherwise the built-in
+hardcoded defaults are used.
 
 ## Token Efficiency
 
@@ -164,26 +204,43 @@ AOG is designed for token-constrained environments (Claude Pro, API budgets).
 - **Lean prompts** — Worker instructions, cross-review prompts, and synthesis prompts are minimized. Reviews use `git diff --stat` instead of full diffs.
 - **Debug logging** — Set `AOG_DEBUG_TOKENS=true` to log token estimates (chars/4) per session in `.aog/sessions/{taskId}.json`.
 
-## Progress Notifications
+## Live Progress
 
-Long-running operations push real-time MCP progress notifications so you can see what's happening instead of staring at a spinner:
+AOG pushes MCP progress notifications throughout every run, including a
+heartbeat during long agent spawns so you never stare at a silent spinner.
+A council run (the default) looks like this:
 
 ```
-Council started — 2 agents (claude, gemini)
-Worktrees created for claude, gemini
+Council started — 3 agents (claude, codex, gemini)
+Worktrees created for claude, codex, gemini
 claude: implementing…
+codex: implementing…
 gemini: implementing…
-gemini: done (72s, 4 files changed)
-claude: done (108s, 3 files changed)
+claude:5s ⟳ | codex:5s ⟳ | gemini:5s ⟳
+claude:10s ⟳ | codex:10s ⟳ | gemini:10s ⟳
+claude:15s ⟳ | codex:15s ✓ 2f | gemini:15s ⟳
+codex: done (15s, 2 files changed)
+claude:20s ⟳ | codex:15s ✓ 2f | gemini:20s ⟳
+gemini: done (24s, 4 files changed)
+claude: done (28s, 3 files changed)
 Running tests…
-Tests: 2/2 agents passed
-Cross-review started (claude, gemini)
+Tests: 3/3 agents passed
+Cross-review started (claude, codex, gemini)
 Cross-review complete
 Chairman claude synthesizing…
 Synthesis complete (best-wins)
 ```
 
-Progress is reported for all three modes (delegate, council, pipeline) at each phase: worktree creation, agent spawn/complete, tests, cross-review, and synthesis.
+Solo runs (`mode: "solo"`) emit a per-agent heartbeat every ~8s with
+elapsed time. Pipeline sequential stages emit one per stage. The icons:
+
+- `⟳` running
+- `✓` completed
+- `✗` failed
+- `2f` files-changed counter once a worktree is committed
+
+Every notification also lands in `.aog/sessions/{taskId}.json` so you can
+replay a run after the fact.
 
 ## Submodule Support
 
@@ -216,6 +273,7 @@ agents:
     model: gemini-2.5-pro
 
 defaults:
+  mode: council        # 'council' (default) or 'solo' — global default for build/research/synthesize
   chairman: claude
   timeout: 300000
   pipeline: full-council
@@ -237,6 +295,22 @@ npm install
 npm run build   # Compile TypeScript
 npm run dev     # Start MCP server with tsx
 ```
+
+## Migration from v1.x
+
+v2.0.0 makes council the default for `aog_build`, `aog_research`, and
+`aog_synthesize`. If you scripted against v1.x:
+
+| What you did | What to do now |
+|--------------|----------------|
+| Called `aog_build` and expected single-agent behavior | Pass `mode: "solo"`, or set `defaults.mode: solo` in `aog.config.yaml`. |
+| Called `aog_council` for multi-agent runs | Continue calling `aog_council` — it's now a deprecation alias forwarding to `aog_build` with `mode: "council"`. Removed in v2.1.0. Migrate to `aog_build` directly. |
+| Called `council_delegate`, `council_run`, `council_pipeline`, `council_status`, or `council_cancel` | These v1.x legacy aliases are **removed** in v2.0.0. Use `aog_build` (with `mode: "solo"`), `aog_build` (council by default), `aog_pipeline`, `aog_status`, and `aog_cancel` respectively. |
+
+The default-behavior change is breaking at the cost/latency level —
+council mode runs every available CLI in parallel and uses
+2-3× the tokens of solo for a single call. The trade-off is a chairman
+synthesis that merges the best of each. Solo remains a one-flag opt-out.
 
 ## Not Yet Built
 

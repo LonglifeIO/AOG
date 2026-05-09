@@ -135,6 +135,14 @@ export interface SynthesisResult {
   tests_passed: boolean;
   merge_commit: string | null;
   summary: string;
+  // For research/synthesize council runs: where the merged markdown
+  // landed in the project root (relative path).
+  output_path?: string;
+  // Per-output-or-file → agent mapping for response observability.
+  // Best-effort; for chairman-merge the values are baseline (winner)
+  // with a `sources` listing every participating agent.
+  merged_from?: Record<string, AgentId>;
+  sources?: AgentId[];
 }
 
 // Agent implementation record
@@ -148,6 +156,10 @@ export interface AgentImplementation {
   exitCode: number | null;
   pid: number | null;
   status: "pending" | "running" | "completed" | "failed" | "timeout";
+  // Holds the full content of `output_path` from the worktree for
+  // research/synthesize council runs (markdown), so cross-review and
+  // chairman synthesis can compare without re-reading the file.
+  outputContent?: string | null;
 }
 
 // Stage transition for audit
@@ -263,6 +275,7 @@ export interface AogConfig {
     chairman: AgentId;
     timeout: number;
     pipeline: string;
+    mode: "council" | "solo";
   };
   security: {
     require_approval_before_merge: boolean;

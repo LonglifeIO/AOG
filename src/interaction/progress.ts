@@ -1,4 +1,5 @@
 import type { AgentId } from "../agents/types.js";
+import type { CouncilStatus } from "./status.js";
 
 /**
  * Progress reporting for long-running AOG operations.
@@ -162,5 +163,54 @@ export class ProgressReporter {
   async pipelineStageFailed(stageId: string, reason?: string): Promise<void> {
     const msg = reason ? `Stage failed: ${stageId} — ${reason}` : `Stage failed: ${stageId}`;
     await this.notify(msg, stageId);
+  }
+
+  async approvalAutoApproved(stageId: string): Promise<void> {
+    await this.notify(`Approval auto-approved: ${stageId} (resume not implemented)`, stageId);
+  }
+
+  /**
+   * Wrap a long-running operation with a single-agent heartbeat — emits a
+   * "still working" notification every `intervalMs` until the work resolves.
+   * Used for delegate and pipeline sequential stages.
+   */
+  async withHeartbeat<T>(
+    agent: AgentId,
+    stage: string,
+    fn: () => Promise<T>,
+    intervalMs = 8000
+  ): Promise<T> {
+    const startedAt = Date.now();
+    const interval = setInterval(() => {
+      const sec = Math.floor((Date.now() - startedAt) / 1000);
+      void this.notify(`${agent} working… ${sec}s`, stage, agent);
+    }, intervalMs);
+    try {
+      return await fn();
+    } finally {
+      clearInterval(interval);
+    }
+  }
+
+  /**
+   * Wrap a council fan-out with a unified-status heartbeat — emits one line
+   * showing every agent's state every `intervalMs` until all agents finish.
+   * The caller updates `status` (start/done/fail) as each agent transitions.
+   */
+  async withCouncilHeartbeat<T>(
+    status: CouncilStatus,
+    fn: () => Promise<T>,
+    intervalMs = 5000
+  ): Promise<T> {
+    const interval = setInterval(() => {
+      void this.notify(status.format(), "fan-out");
+    }, intervalMs);
+    try {
+      return await fn();
+    } finally {
+      clearInterval(interval);
+      // Final status snapshot once everyone settled
+      void this.notify(status.format(), "fan-out");
+    }
   }
 }

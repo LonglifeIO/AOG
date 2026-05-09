@@ -59,6 +59,10 @@ export class AgentManager {
     return this.available.has(agent);
   }
 
+  getConfig(): AogConfig | null {
+    return this.config;
+  }
+
   async spawn(agent: AgentId, options: SpawnOptions): Promise<AgentResult> {
     const spawner = this.spawners.get(agent);
     if (!spawner) {

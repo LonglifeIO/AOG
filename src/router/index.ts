@@ -1,7 +1,13 @@
 import type { AgentId, TaskType } from "../agents/types.js";
 
 /**
- * Static routing matrix — maps task types to preferred agents.
+ * Solo-mode routing matrix.
+ *
+ * Council mode (the default for aog_build / aog_research / aog_synthesize)
+ * does NOT consult this table — it runs every available CLI in parallel.
+ * This routing only fires when the caller passes `mode: "solo"` (cost or
+ * speed escape hatch) or when council auto-degrades on a single-CLI
+ * environment.
  *
  * IMPLEMENT → claude (best multi-file planning)
  * REFACTOR → claude (plan subagent)

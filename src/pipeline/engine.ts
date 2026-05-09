@@ -9,6 +9,7 @@ import type {
   PipelineStatus,
   StageTransition,
   AgentId,
+  SpawnOptions,
 } from "../agents/types.js";
 import type { ProgressReporter } from "../interaction/progress.js";
 import { fanOut } from "../council/fanout.js";
@@ -142,6 +143,7 @@ export class PipelineEngine {
     const implementations = await fanOut({
       taskId: this.options.taskId,
       task: this.options.task,
+      operation: "build",
       agents,
       agentManager: this.options.agentManager,
       worktreeManager: this.options.worktreeManager,
@@ -160,6 +162,7 @@ export class PipelineEngine {
       implementations: this.state.implementations,
       agents,
       agentManager: this.options.agentManager,
+      operation: "build",
       progress: this.options.progress,
     });
 
@@ -174,6 +177,8 @@ export class PipelineEngine {
       implementations: this.state.implementations,
       reviews: this.state.reviews,
       chairman,
+      operation: "build",
+      strategy: stage.strategy,
       agentManager: this.options.agentManager,
       worktreeManager: this.options.worktreeManager,
       progress: this.options.progress,
@@ -222,20 +227,17 @@ export class PipelineEngine {
         throw new Error(`No available agent for sequential stage "${stage.id}"`);
       }
 
-      // Build the prompt: combine task context with the stage's prompt template
-      const prompt = `${this.options.task}\n\n---\n\n${stage.prompt_template}`;
-
       if (this.options.progress) {
         await this.options.progress.notify(`${agent}: working on ${stage.id}…`, stage.id, agent);
       }
 
-      const result = await this.options.agentManager.spawn(agent, {
-        prompt,
-        cwd: process.cwd(),
-        taskId: `${this.options.taskId}-${stage.id}`,
-        timeout: stage.timeout ? stage.timeout * 1000 : 300_000,
-        allowPermissionBypass: true,
-      });
+      const spawnSpec = this.buildSpawnOptions(stage, agent);
+
+      const result = this.options.progress
+        ? await this.options.progress.withHeartbeat(agent, stage.id, () =>
+            this.options.agentManager.spawn(agent, spawnSpec)
+          )
+        : await this.options.agentManager.spawn(agent, spawnSpec);
 
       if (result.status !== "completed") {
         throw new Error(`Agent ${agent} failed on stage "${stage.id}": ${result.result.slice(0, 200)}`);
@@ -265,13 +267,73 @@ export class PipelineEngine {
   }
 
   private async executeApproval(): Promise<void> {
-    // TODO: Pipeline resume after approval pause is not yet built.
-    // For now, log a warning and auto-approve so the pipeline continues.
-    // When resume is implemented, this will set waiting_approval and break.
+    // Pipeline resume after approval pause is not yet built.
+    // Auto-approve so the pipeline continues, but emit a progress notification
+    // so the client can see the transition (silent auto-approve is mistaken
+    // for a hang otherwise).
+    const stageId = this.state.currentStage;
     console.error(
       `[aog] Approval stage auto-approved (pipeline resume not yet implemented). ` +
       `Review outputs in .aog/sessions/${this.options.taskId}.json`
     );
+    if (this.options.progress) {
+      await this.options.progress.approvalAutoApproved(stageId);
+    }
+  }
+
+  /**
+   * Build SpawnOptions for a sequential pipeline stage. Parses YAML flags
+   * (--max-turns N, --max-budget-usd N, -m MODEL) into structured options
+   * so the agent runs with the bounds the template author specified — and
+   * applies a sane default maxTurns when no template config exists.
+   */
+  private buildSpawnOptions(
+    stage: PipelineTemplate["stages"][0],
+    agent: AgentId
+  ): SpawnOptions {
+    const agentConfig = this.options.template.agents.find((a) => a.id === agent);
+    const flags = agentConfig?.flags ?? [];
+
+    let maxTurns: number | undefined;
+    let maxBudgetUsd: number | undefined;
+    let model: string | undefined;
+
+    for (let i = 0; i < flags.length; i++) {
+      const flag = flags[i];
+      const next = flags[i + 1];
+      if (flag === "--max-turns" && next !== undefined) {
+        const parsed = parseInt(next, 10);
+        if (!Number.isNaN(parsed)) maxTurns = parsed;
+        i++;
+      } else if (flag === "--max-budget-usd" && next !== undefined) {
+        const parsed = parseFloat(next);
+        if (!Number.isNaN(parsed)) maxBudgetUsd = parsed;
+        i++;
+      } else if ((flag === "-m" || flag === "--model") && next !== undefined) {
+        model = next;
+        i++;
+      }
+    }
+
+    // Hard default for Claude — without a turn cap an open-ended prompt
+    // ("execute the implementation plan") can churn for many minutes
+    // before the wall-clock timeout fires, looking like a hang.
+    if (agent === "claude" && maxTurns === undefined) {
+      maxTurns = 20;
+    }
+
+    const prompt = `${this.options.task}\n\n---\n\n${stage.prompt_template}`;
+
+    return {
+      prompt,
+      cwd: process.cwd(),
+      taskId: `${this.options.taskId}-${stage.id}`,
+      timeout: stage.timeout ? stage.timeout * 1000 : 300_000,
+      allowPermissionBypass: true,
+      maxTurns,
+      maxBudgetUsd,
+      model,
+    };
   }
 
   private recordTransition(

@@ -1,6 +1,6 @@
 {
   "name": "aog-mcp-server",
-  "version": "1.1.2",
+  "version": "2.0.0",
   "description": "Multi-agent coding orchestrator — CLI Council for Claude Code, Codex CLI, and Gemini CLI via MCP",
   "type": "module",
   "main": "./dist/index.js",
@@ -8,7 +8,7 @@
     "aog": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest",
@@ -52,7 +52,7 @@
     "url": "https://github.com/LonglifeIO/AOG.git"
   },
   "files": [
-    "dist",
+    "dist/**/*.js",
     "templates",
     "skills"
   ]
