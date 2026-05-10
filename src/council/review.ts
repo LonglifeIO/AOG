@@ -1,12 +1,14 @@
 import type { AgentManager } from "../agents/manager.js";
-import type { AgentId, AgentImplementation, ReviewOutput } from "../agents/types.js";
+import type { AgentId, AgentImplementation, ReviewOutput, TestResult } from "../agents/types.js";
 import type { ProgressReporter } from "../interaction/progress.js";
-import { anonymizedDiffStat } from "../worktree/diff.js";
+import { anonymizedDiff } from "../worktree/diff.js";
 import { sanitizeInterAgentOutput } from "../utils/output.js";
 import type { CouncilOperation } from "./guardrails.js";
 
 const IMPL_LABELS = ["Implementation Alpha", "Implementation Beta", "Implementation Gamma"];
-const MAX_CONTENT_CHARS = 6000;
+// Safety net for very long markdown research/synthesize outputs only.
+// Build operations send full diffs without truncation (ADR-014).
+const MAX_MARKDOWN_CHARS = 200_000;
 
 interface CrossReviewOptions {
   taskId: string;
@@ -47,9 +49,10 @@ export async function crossReview(
     await progress.reviewStarted(reviewers);
   }
 
-  // Build per-agent review payloads. For build, this is the diff --stat;
-  // for research/synthesize, it's the markdown content (truncated and
-  // sanitized) prefixed with the implementation label.
+  // Build per-agent review payloads. For build, this is the full
+  // anonymized diff plus test results when present (ADR-014); for
+  // research/synthesize, it's the markdown content (capped only as
+  // a context-window safety net) prefixed with the implementation label.
   const labeled: Array<{ agent: AgentId; label: string; payload: string }> = [];
   for (let i = 0; i < completedAgents.length; i++) {
     const agent = completedAgents[i];
@@ -57,13 +60,17 @@ export async function crossReview(
     let payload: string | null = null;
 
     if (operation === "build") {
-      payload = await anonymizedDiffStat(implementations[agent].worktreePath, label);
+      const diff = await anonymizedDiff(implementations[agent].worktreePath, label);
+      if (diff) {
+        const tests = formatTestResults(implementations[agent].testResults);
+        payload = tests ? `${diff}\n\n${tests}` : diff;
+      }
     } else {
       const content = implementations[agent].outputContent ?? "";
-      const truncated = content.length > MAX_CONTENT_CHARS
-        ? content.slice(0, MAX_CONTENT_CHARS) + "\n\n…[truncated]"
+      const capped = content.length > MAX_MARKDOWN_CHARS
+        ? content.slice(0, MAX_MARKDOWN_CHARS) + "\n\n…[truncated]"
         : content;
-      const anonymized = anonymizeAgentReferences(truncated);
+      const anonymized = anonymizeAgentReferences(capped);
       payload = `## ${label}\n\n${anonymized}`;
     }
 
@@ -105,8 +112,9 @@ export async function crossReview(
 function buildReviewPrompt(payloads: string, labels: string[], operation: CouncilOperation): string {
   const operationDescription: Record<CouncilOperation, string> = {
     build:
-      "Review the following implementations (diff --stat shown). Rank each on " +
-      "correctness, readability, performance, and test_coverage (1-10).",
+      "Review the following implementations (full diffs shown, plus test " +
+      "results where available). Rank each on correctness, readability, " +
+      "performance, and test_coverage (1-10) based on the actual code.",
     research:
       "Review the following research documents (markdown content shown). " +
       "Rank each on correctness (factual accuracy), readability (clarity and " +
@@ -163,4 +171,14 @@ function parseReviewOutput(
 
 function anonymizeAgentReferences(text: string): string {
   return text.replace(/\b(claude|codex|gemini)\b/gi, "agent");
+}
+
+function formatTestResults(tests: TestResult | null): string | null {
+  if (!tests) return null;
+  const status = tests.passed ? "passed" : `failed (exit ${tests.exit_code})`;
+  const lines = [`## Test results`, `Status: ${status}`];
+  if (!tests.passed && tests.stderr) {
+    lines.push("", "```", tests.stderr.slice(0, 1024), "```");
+  }
+  return lines.join("\n");
 }

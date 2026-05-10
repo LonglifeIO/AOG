@@ -129,6 +129,11 @@ async function runCouncilBuild(
           diff: impl.diff,
           diffSummary: impl.diffSummary,
           testResults: impl.testResults,
+          // Persist the agent's result text for failed agents so the
+          // error message survives. Capped at 2KB. (ADR-014)
+          ...(impl.status !== "completed" && impl.result
+            ? { result_excerpt: impl.result.slice(0, 2048) }
+            : {}),
         },
       ])
     ),

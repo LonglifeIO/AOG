@@ -71,7 +71,11 @@ export class GeminiSpawner implements AgentSpawner {
     const args: string[] = ["-p", options.prompt, "--output-format", "json"];
 
     if (!options.readOnly && options.allowPermissionBypass) {
-      args.push("--yolo");
+      // --yolo alone is not sufficient: gemini downgrades to "default"
+      // approval mode in untrusted directories (incl. fresh worktrees),
+      // can't prompt in headless mode, and exits non-zero. --skip-trust
+      // bypasses the trust check for this session. (ADR-014)
+      args.push("--yolo", "--skip-trust");
     }
 
     if (options.model) {

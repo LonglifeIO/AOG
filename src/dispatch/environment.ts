@@ -2,12 +2,14 @@ import { cp, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import type { AgentId } from "../agents/types.js";
-import { writeWorkerInstructions, readProjectInstructions, type InstructionContext } from "./instructions.js";
 
 /**
- * Full worker environment setup.
- * Called after worktree creation, before agent spawn.
- * Sets up: instruction files + skills + optional MCP callback config.
+ * Worker environment setup. Called after worktree creation, before
+ * agent spawn. Copies project skills into the worktree and (optionally)
+ * registers an MCP callback. The per-task prompt is passed directly to
+ * the CLI via -p; we do not write per-CLI instruction files into the
+ * worktree (ADR-014: the duplicate file polluted diffs and obscured
+ * the gemini diagnosis).
  */
 
 export interface WorkerEnvironmentOptions {
@@ -23,28 +25,12 @@ export interface WorkerEnvironmentOptions {
 }
 
 export async function setupWorkerEnvironment(options: WorkerEnvironmentOptions): Promise<void> {
-  // 1. Write task-specific instruction file
-  const projectContext = await readProjectInstructions(options.projectRoot, options.agent);
-
-  const ctx: InstructionContext = {
-    taskId: options.taskId,
-    task: options.task,
-    agent: options.agent,
-    scopedFiles: options.scopedFiles ?? [],
-    readOnlyContext: options.readOnlyContext ?? [],
-    outputFormat: "structured text with code changes",
-    worktreePath: options.worktreePath,
-    projectContext,
-  };
-
-  await writeWorkerInstructions(ctx);
-
-  // 2. Copy skills to worktree (if enabled and available)
+  // Copy skills to worktree (if enabled and available)
   if (options.installSkills !== false) {
     await installSkillsInWorktree(options.worktreePath, options.projectRoot);
   }
 
-  // 3. MCP callback registration (v2 prep — disabled by default)
+  // MCP callback registration (v2 prep — disabled by default)
   if (options.registerMcpCallback) {
     const { registerMcpCallback } = await import("./mcp-registration.js");
     await registerMcpCallback(options.worktreePath, options.agent);

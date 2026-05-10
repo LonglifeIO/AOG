@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join, isAbsolute } from "node:path";
 import type { AgentManager } from "../agents/manager.js";
 import type { WorktreeManager } from "../worktree/manager.js";
@@ -150,7 +150,7 @@ interface ChairmanMergeContext {
 async function chairmanMergeBuild(ctx: ChairmanMergeContext): Promise<SynthesisResult> {
   const { taskId, chairman, winner, scores, implementations, agentManager, progress, summaryLine, sources, winnerImpl } = ctx;
   try {
-    const mergePrompt = buildBuildMergePrompt(scores, implementations);
+    const mergePrompt = await buildBuildMergePrompt(scores, implementations);
     await agentManager.spawn(chairman, {
       prompt: mergePrompt,
       cwd: winnerImpl.worktreePath,
@@ -335,27 +335,80 @@ function scoreImplementations(
   return scores;
 }
 
-function buildBuildMergePrompt(
+/**
+ * Build the chairman merge prompt with full file contents per rival
+ * (ADR-014). The chairman runs in the winner's worktree and can read
+ * its own version of any file directly; rival files are inlined here
+ * so the chairman has all candidates in full to compare and synthesize
+ * from. Worktrees are alive at this point — teardown is in
+ * runCouncilPipeline's finally block, after synthesize returns.
+ */
+async function buildBuildMergePrompt(
   scores: ImplementationScore[],
   implementations: Record<string, AgentImplementation>
-): string {
+): Promise<string> {
   const others = scores.slice(1);
-  let prompt = `Merge the best parts of ${scores.length} implementations. You're in the winner's worktree.
+  const lines: string[] = [
+    `Merge the best parts of ${scores.length} implementations. You're in the winner's worktree.`,
+    "",
+    `Scores: ${scores.map((s) => `${s.agent}=${s.totalScore}`).join(", ")}`,
+    "",
+  ];
 
-Scores: ${scores.map((s) => `${s.agent}=${s.totalScore}`).join(", ")}
-
-`;
   for (const other of others) {
     const impl = implementations[other.agent];
-    if (impl?.diffSummary) {
-      prompt += `### ${other.agent} (${other.totalScore}) — changed files:\n${sanitizeInterAgentOutput(impl.diffSummary)}\n\n`;
+    if (!impl?.worktreePath) continue;
+
+    const files = changedFilesFromDiffSummary(impl.diffSummary);
+    lines.push(`### ${other.agent} (${other.totalScore}) — final files:`, "");
+
+    for (const file of files) {
+      const filePath = isAbsolute(file) ? file : join(impl.worktreePath, file);
+      try {
+        const content = await readFile(filePath, "utf-8");
+        const lineCount = content.split("\n").length;
+        lines.push(
+          `#### ${file} (${lineCount} lines)`,
+          "",
+          "```",
+          sanitizeInterAgentOutput(content),
+          "```",
+          ""
+        );
+      } catch {
+        // File missing or unreadable — skip silently. Likely a deleted file
+        // (diff stat mentions it) or a permissions edge case.
+      }
     }
-    if (impl?.diff) {
-      prompt += `Key changes (truncated):\n\`\`\`diff\n${sanitizeInterAgentOutput(impl.diff.slice(0, 3000))}\n\`\`\`\n\n`;
-    }
+
+    lines.push("---", "");
   }
-  prompt += `Cherry-pick only clearly better changes. Ensure result compiles.`;
-  return prompt;
+
+  lines.push(
+    "You have the winner's version of each file in your worktree (read it directly).",
+    "Compare with the rival versions above. Write a synthesized final version of any",
+    "file where a rival has clearly better ideas. Ensure the result compiles."
+  );
+
+  return lines.join("\n");
+}
+
+/**
+ * Extract the list of changed files from a `git diff --stat` summary.
+ * Skips the trailing "N files changed, ..." summary line, which has no
+ * `|` separator. Used by the chairman merge to know which files to
+ * read from each rival worktree.
+ */
+function changedFilesFromDiffSummary(summary: string | null): string[] {
+  if (!summary) return [];
+  const out: string[] = [];
+  for (const line of summary.split("\n")) {
+    const sep = line.indexOf("|");
+    if (sep === -1) continue;
+    const file = line.slice(0, sep).trim();
+    if (file) out.push(file);
+  }
+  return out;
 }
 
 function buildMarkdownMergePrompt(

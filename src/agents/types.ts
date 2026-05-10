@@ -160,6 +160,9 @@ export interface AgentImplementation {
   // research/synthesize council runs (markdown), so cross-review and
   // chairman synthesis can compare without re-reading the file.
   outputContent?: string | null;
+  // The agent's stdout/result text. Used to persist a short excerpt
+  // for failed agents so the error message survives in the session JSON.
+  result?: string;
 }
 
 // Stage transition for audit

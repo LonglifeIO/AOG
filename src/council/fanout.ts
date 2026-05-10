@@ -104,6 +104,7 @@ export async function fanOut(
 
         implementations[agent].exitCode = result.status === "completed" ? 0 : 1;
         implementations[agent].status = result.status === "completed" ? "completed" : "failed";
+        implementations[agent].result = result.result;
 
         let filesChanged: number | undefined;
 
